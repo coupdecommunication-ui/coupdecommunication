@@ -1,3 +1,4 @@
 User-agent: *
 Allow: /
+Disallow: /espace/
 Sitemap: https://coupdecommunication.com/sitemap.xml
