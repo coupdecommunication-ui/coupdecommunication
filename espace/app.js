@@ -856,7 +856,7 @@ function renderList() {
   const groups = {clients:LIST.filter(p => !p.archived && !isPro(p)), prospects:LIST.filter(p => !p.archived && isPro(p)), archived:LIST.filter(p => p.archived)};
   const rows = groups[lTab];
   let h = `<div class="eyebrow">Gestion · Coup de Com’</div><h1>Projets</h1><p class="note">Un projet par client ou par mission. Tes clients se connectent sur <b>${esc(PUBLIC_URL.replace(/^https?:\/\//, ''))}</b> avec leur adresse e-mail et ne voient que leurs projets, selon leur rôle. Un prospect ne voit que son questionnaire de découverte et tes devis.</p>`;
-  h += `<div class="acts"><button class="btn primary" id="newP">Nouveau client</button><button class="btn" id="newPro">Nouveau prospect</button></div>`;
+  h += `<div class="acts"><button class="btn primary" id="newP">Nouveau client</button><button class="btn" id="newPro">Nouveau prospect</button><button class="btn" data-imp="open">Importer depuis l’Atelier</button></div><div id="impBox">${impBox()}</div>`;
   h += `<div class="seg gtabs">${[['clients', 'Clients'], ['prospects', 'Prospects'], ['archived', 'Archivés']].map(([k, l]) => `<button data-lt="${k}" aria-pressed="${lTab === k}">${l} (${groups[k].length})</button>`).join('')}</div>`;
   if (!rows.length) h += `<p class="empty">${lTab === 'archived' ? 'Aucun projet archivé.' : lTab === 'prospects' ? 'Aucun prospect en cours. Après un premier appel, crée-lui un espace découverte.' : 'Aucun client pour l’instant.'}</p>`;
   else h += `<div class="plist">${rows.map(p => {
@@ -891,7 +891,8 @@ function renderList() {
     if (error) { toast(/reauth|recent/i.test(error.message) ? 'Par sécurité : déconnecte-toi, reconnecte-toi avec le lien e-mail, puis enregistre le mot de passe tout de suite' : /weak|pwned|easy|guess/i.test(error.message) ? 'Mot de passe trop simple : allonge-le ou mélange lettres, chiffres et symboles' : 'Enregistrement impossible : ' + error.message); return; }
     $('#pw1').value = $('#pw2').value = ''; toast('Mot de passe enregistré');
   };
-  app().onclick = e => { const b = e.target.closest('[data-lt]'); if (b) { lTab = b.dataset.lt; renderList(); } };
+  app().onclick = e => { if (impClick(e)) return; const b = e.target.closest('[data-lt]'); if (b) { lTab = b.dataset.lt; renderList(); } };
+  impBind();
   const create = async (btn, stage) => {
     btn.disabled = true;
     const {data, error} = await sb.from('projects').insert({data:{...blank(), stage, project:stage === 'prospect' ? 'Découverte' : ''}}).select('id').single();
@@ -901,6 +902,98 @@ function renderList() {
   };
   $('#newP').onclick = e => create(e.target, 'client');
   $('#newPro').onclick = e => create(e.target, 'prospect');
+}
+
+/* ---------- import depuis l'Atelier Coup de Com' (fiche copiée dans l'Atelier, collée ici) ---------- */
+let IMP = null;
+const IMP_ST = {'À faire':'todo', 'En cours':'doing', 'Fait':'done', todo:'todo', doing:'doing', done:'done'};
+const normN = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const clip = (s, n) => String(s ?? '').slice(0, n);
+function impParse(text) {
+  const i = text.indexOf('{'), j = text.lastIndexOf('}');
+  if (i < 0 || j < i) throw new Error('Rien à lire : colle le texte copié depuis l’Atelier.');
+  let o; try { o = JSON.parse(text.slice(i, j + 1)); } catch (e) { throw new Error('Le texte est incomplet : recopie-le depuis l’Atelier.'); }
+  if (o.format !== 'coupdecom-atelier' || !Array.isArray(o.items)) throw new Error('Ce texte ne vient pas de l’Atelier Coup de Com’.');
+  return o.items.slice(0, 60).map(x => ({
+    atelierId:clip(x.atelierId, 80), kind:x.kind === 'prospect' ? 'prospect' : 'client', name:clip(x.name, 120) || 'Sans nom',
+    sector:clip(x.sector, 80), city:clip(x.city, 80), description:clip(x.description, 400), contactName:clip(x.contactName, 80),
+    email:/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(x.email || '').trim()) ? String(x.email).trim().toLowerCase() : '',
+    phone:clip(x.phone, 40), instagram:clip(x.instagram, 120), tiktok:clip(x.tiktok, 120), facebook:clip(x.facebook, 200), website:clip(x.website, 200),
+    pack:clip(x.pack, 80), nextAction:clip(x.nextAction, 200), nextDate:/^\d{4}-\d{2}-\d{2}$/.test(x.nextDate || '') ? x.nextDate : '',
+    tasks:(Array.isArray(x.tasks) ? x.tasks : []).slice(0, 40).map(t => ({id:'at-' + clip(t.id || uid(), 40), t:clip(t.t, 160), s:IMP_ST[t.s] || 'todo', d:/^\d{4}-\d{2}-\d{2}$/.test(t.d || '') ? t.d : ''})).filter(t => t.t)}));
+}
+function impMatch(it) {
+  return LIST.find(p => (p.data || {}).atelierId && p.data.atelierId === it.atelierId) || LIST.find(p => !p.archived && normN((p.data || {}).client) === normN(it.name) && normN(it.name));
+}
+function impBox() {
+  if (!IMP) return '';
+  if (!IMP.items) return `<div class="card imp"><h3 style="margin-top:0">Importer depuis l’Atelier</h3>
+    <p class="note" style="margin-top:0">Dans l’Atelier, ouvre la fiche du client ou du prospect et touche <b>« Espace client »</b>, puis <b>« Copier »</b>. Colle le texte ici, ou dépose le fichier .txt / .json si tu l’as enregistré.</p>
+    <textarea class="in" id="impT" rows="6" placeholder="Colle ici le texte copié depuis l’Atelier"></textarea>
+    <div class="impdrop" id="impD">Ou dépose un fichier ici · <button class="linkbtn" data-imp="file">choisir un fichier</button></div>
+    ${IMP.err ? `<p class="note warn">${esc(IMP.err)}</p>` : ''}
+    <div class="acts"><button class="btn primary" data-imp="read">Lire</button><button class="btn ghost" data-imp="close">Annuler</button></div></div>`;
+  return `<div class="card imp"><h3 style="margin-top:0">${IMP.items.length} fiche${IMP.items.length > 1 ? 's' : ''} à importer</h3>
+    <p class="note" style="margin-top:0">Vérifie puis importe. Une fiche déjà importée est mise à jour (nom, prochaine étape, avancement venu de l’Atelier) : ce que tu as ajouté ici à la main est gardé. Rien n’est envoyé au client : l’invitation reste à copier dans le projet.</p>
+    <div class="implist">${IMP.items.map((it, i) => { const ex = impMatch(it); return `<label class="improw"><input type="checkbox" data-imc="${i}" ${it.skip ? '' : 'checked'}>
+      <span><b>${esc(it.name)}</b><small>${it.kind === 'prospect' ? 'Prospect · espace découverte' : 'Client signé'}${it.city ? ' · ' + esc(it.city) : ''} · ${ex ? `<span class="pill wait">mise à jour de « ${esc((ex.data || {}).project || (ex.data || {}).client || 'projet')} »</span>` : '<span class="pill ok">nouveau projet</span>'}</small>
+      <small>${it.tasks.length ? it.tasks.length + ' étape' + (it.tasks.length > 1 ? 's' : '') + ' d’avancement · ' : ''}${it.nextAction ? 'Prochaine étape : ' + esc(it.nextAction) : 'Pas de prochaine étape'}</small>
+      ${it.email ? `<small><input type="checkbox" data-ima="${i}" ${it.noAccess ? '' : 'checked'}> Donner l’accès à ${esc(it.email)} (gérant)</small>` : '<small class="warn">Pas d’e-mail : tu ajouteras l’accès dans le projet</small>'}</span></label>`; }).join('')}</div>
+    <div class="acts"><button class="btn primary" data-imp="go">Importer</button><button class="btn ghost" data-imp="back">Recommencer</button></div></div>`;
+}
+function impBrief(it) {
+  const links = [it.instagram && (/^https?:/i.test(it.instagram) ? it.instagram : 'instagram.com/' + it.instagram.replace(/^@/, '')), it.tiktok && (/^https?:/i.test(it.tiktok) ? it.tiktok : 'tiktok.com/@' + it.tiktok.replace(/^@/, '')), it.facebook, it.website].filter(Boolean).join('\n');
+  return {etab:it.description || [it.sector, it.city].filter(Boolean).join(' · '), reseaux:links, pratique:[it.city, it.phone].filter(Boolean).join(' · ')};
+}
+async function impRun(btn) {
+  const its = IMP.items.filter(x => !x.skip); if (!its.length) { toast('Coche au moins une fiche'); return; }
+  btn.disabled = true; let ok = 0, fail = 0;
+  for (const it of its) {
+    try {
+      const ex = impMatch(it), nets = [it.instagram && 'instagram', it.facebook && 'facebook', it.tiktok && 'tiktok'].filter(Boolean);
+      let id;
+      if (ex) {
+        const d = {...blank(), ...(ex.data || {})};
+        d.client = it.name; d.atelierId = it.atelierId; d.atelierAt = new Date().toISOString();
+        if (it.nextAction) { d.next = it.nextAction; d.nextDate = it.nextDate; }
+        if (d.stage === 'prospect' && it.kind === 'client') d.stage = 'client';
+        d.tasks = [...(d.tasks || []).filter(t => !String(t.id).startsWith('at-')), ...it.tasks];
+        const {error} = await sb.from('projects').update({data:d}).eq('id', ex.id); if (error) throw error; id = ex.id;
+      } else {
+        const d = {...blank(), stage:it.kind, client:it.name, project:it.kind === 'prospect' ? 'Découverte' : (it.pack && it.pack !== '—' ? it.pack : 'Accompagnement'), next:it.nextAction, nextDate:it.nextDate, tasks:it.tasks, atelierId:it.atelierId, atelierAt:new Date().toISOString()};
+        if (nets.length) d.nets = nets;
+        const {data, error} = await sb.from('projects').insert({data:d}).select('id').single(); if (error) throw error; id = data.id;
+      }
+      if (it.email && !it.noAccess) await sb.from('members').upsert({project_id:id, email:it.email, name:it.contactName || '', role:'gerant'}, {onConflict:'project_id,email', ignoreDuplicates:true});
+      const pre = impBrief(it), {data:br} = await sb.from('briefs').select('project_id,data,submitted').eq('project_id', id).maybeSingle();
+      if (!br) await sb.from('briefs').insert({project_id:id, data:pre, submitted:false});
+      else if (!br.submitted) { const bd = {...(br.data || {})}; let ch = false; for (const k in pre) if (pre[k] && !String(bd[k] || '').trim()) { bd[k] = pre[k]; ch = true; } if (ch) await sb.from('briefs').update({data:bd}).eq('project_id', id); }
+      ok++;
+    } catch (e) { fail++; console.warn(e); }
+  }
+  btn.disabled = false; IMP = null;
+  toast(fail ? `${ok} importé${ok > 1 ? 's' : ''}, ${fail} en erreur : vérifie ta connexion` : `${ok} fiche${ok > 1 ? 's' : ''} importée${ok > 1 ? 's' : ''} depuis l’Atelier`);
+  adminList();
+}
+function impBind() {
+  const d = $('#impD'); if (!d) return;
+  const readFile = async f => { if (!f) return; if (f.size > 2e6) { toast('Fichier trop lourd'); return; } $('#impT').value = await f.text(); };
+  d.ondragover = e => { e.preventDefault(); d.classList.add('on'); }; d.ondragleave = () => d.classList.remove('on');
+  d.ondrop = e => { e.preventDefault(); d.classList.remove('on'); readFile(e.dataTransfer.files[0]); };
+  d.querySelector('[data-imp="file"]').onclick = async e => { e.preventDefault(); const fs = await pick('.txt,.json,text/plain,application/json', false); if (fs && fs[0]) readFile(fs[0]); };
+}
+function impClick(e) {
+  const c = e.target.closest('[data-imc],[data-ima]');
+  if (c && IMP && IMP.items) { const i = +(c.dataset.imc ?? c.dataset.ima); if (c.dataset.imc !== undefined) IMP.items[i].skip = !c.checked; else IMP.items[i].noAccess = !c.checked; return true; }
+  const b = e.target.closest('[data-imp]'); if (!b || b.dataset.imp === 'file') return !!b;
+  const k = b.dataset.imp;
+  if (k === 'open') IMP = {};
+  if (k === 'close') IMP = null;
+  if (k === 'back') IMP = {};
+  if (k === 'read') { try { IMP = {items:impParse($('#impT').value)}; } catch (err) { IMP = {err:err.message}; } }
+  if (k === 'go') { impRun(b); return true; }
+  const box = $('#impBox'); if (box) { box.innerHTML = impBox(); impBind(); if (k === 'open') box.scrollIntoView({block:'nearest', behavior:reduced() ? 'auto' : 'smooth'}); }
+  return true;
 }
 
 /* ---------- un projet ---------- */

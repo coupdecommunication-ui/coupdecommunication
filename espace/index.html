@@ -299,6 +299,11 @@ audio{width:100%;max-width:420px;height:40px}
 .lrow img,.lrow .ph{width:80px;height:80px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:8px}
 .trow{display:grid;grid-template-columns:minmax(0,1fr) 130px 150px auto;gap:8px;align-items:center}
 @media(max-width:700px){.trow{grid-template-columns:1fr 1fr}.trow .in:first-child{grid-column:1/-1}}
+.imp{margin:10px 0 18px;border:1.5px solid var(--sauge)}.imp textarea{width:100%;min-height:120px;font-family:inherit}
+.impdrop{margin-top:10px;border:2px dashed var(--line);border-radius:14px;padding:14px;text-align:center;color:var(--mute);font-size:14px;transition:.15s}.impdrop.on{border-color:var(--sauge);background:var(--panel2)}
+.linkbtn{background:none;border:0;padding:0;color:inherit;text-decoration:underline;font:inherit;cursor:pointer}
+.implist{display:flex;flex-direction:column;gap:8px;margin:10px 0}.improw{display:flex;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--panel2);cursor:pointer}
+.improw>span{display:flex;flex-direction:column;gap:4px;min-width:0}.improw small{color:var(--mute);font-size:13px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}.improw small.warn{color:var(--redi)}
 </style>
 </head>
 <body>
