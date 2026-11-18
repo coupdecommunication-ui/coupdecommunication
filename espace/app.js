@@ -1011,6 +1011,14 @@ function invite(m) {
   const what = m.role === 'compta' ? T('vos devis et factures', 'tes devis et factures') : m.role === 'equipe' ? 'les posts à valider, le calendrier et les rapports' : T('les posts à valider, le calendrier, les rapports et vos factures', 'les posts à valider, le calendrier, les rapports et tes factures');
   return `Bonjour${m.name ? ' ' + m.name : ''},\n\n${T('Votre espace client Coup de Com’ est prêt. Vous y trouverez', 'Ton espace client Coup de Com’ est prêt. Tu y trouveras')} ${what}.\n\n${PUBLIC_URL}\n\n${T('Connectez-vous avec cette adresse e-mail', 'Connecte-toi avec cette adresse e-mail')} : ${m.email}. ${T('Vous recevrez un lien de connexion, sans mot de passe à créer.', 'Tu recevras un lien de connexion, sans mot de passe à créer.')}\n\nÀ très vite,\n${SIGN}`;
 }
+/* envoi par e-mail : ouvre Gmail (compte de l'agence) ou la messagerie de l'ordinateur, message prêt, il reste à cliquer sur Envoyer */
+const inviteSubject = () => prospect() ? T('Votre espace découverte Coup de Com’', 'Ton espace découverte Coup de Com’') : T('Votre espace client Coup de Com’ est prêt', 'Ton espace client Coup de Com’ est prêt');
+function sendMail(how, to, subject, body) {
+  const e = encodeURIComponent, list = to.filter(Boolean).join(',');
+  if (how === 'mailto') { location.href = `mailto:${list}?subject=${e(subject)}&body=${e(body)}`; return; }
+  const w = window.open(`https://mail.google.com/mail/?${AGENCY_MAIL ? 'authuser=' + e(AGENCY_MAIL) + '&' : ''}view=cm&fs=1&to=${e(list)}&su=${e(subject)}&body=${e(body)}`, '_blank', 'noopener');
+  toast(w === null ? 'Ton navigateur a bloqué la fenêtre : autorise les fenêtres pour ce site, ou utilise « Autre messagerie »' : 'Gmail s’ouvre avec le message prêt : vérifie puis clique sur Envoyer');
+}
 function reminder() {
   const w = POSTS.filter(p => pstat(p).k === 'wait').sort((a, b) => deadline(a) - deadline(b)); if (!w.length) return '';
   const first = MEMBERS.find(m => m.role === 'gerant') || MEMBERS[0] || {};
@@ -1038,9 +1046,9 @@ function renderAdmin() {
 /* accès client */
 function accessAdmin() {
   let h = `<h2>Accès client <small>${MEMBERS.length} personne${MEMBERS.length > 1 ? 's' : ''}</small></h2><div class="card" id="memA">`;
-  h += MEMBERS.length ? MEMBERS.map(m => `<div class="mrow" data-mem="${esc(m.email)}"><div><b>${esc(m.email)}</b><input class="in" data-mf="name" value="${esc(m.name)}" placeholder="Prénom (facultatif)" aria-label="Prénom"></div><select class="in" data-mf="role" aria-label="Rôle">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${m.role === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select><div class="acts" style="margin:0"><button class="btn sm" data-ma="inv">Copier l’invitation</button><button class="icon" data-ma="del" aria-label="Retirer l’accès de ${esc(m.email)}">×</button></div></div>`).join('') : '<p class="note warn" style="margin-top:0">Ajoute l’adresse de ton client pour qu’il voie ce projet.</p>';
+  h += MEMBERS.length ? MEMBERS.map(m => `<div class="mrow" data-mem="${esc(m.email)}"><div><b>${esc(m.email)}</b><input class="in" data-mf="name" value="${esc(m.name)}" placeholder="Prénom (facultatif)" aria-label="Prénom"></div><select class="in" data-mf="role" aria-label="Rôle">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${m.role === k ? 'selected' : ''}>${v[0]}</option>`).join('')}</select><div class="acts" style="margin:0"><button class="btn sm primary" data-ma="gmail">Envoyer par Gmail</button><button class="btn sm" data-ma="mailto">Autre messagerie</button><button class="btn sm ghost" data-ma="inv">Copier l’invitation</button><button class="icon" data-ma="del" aria-label="Retirer l’accès de ${esc(m.email)}">×</button></div></div>`).join('') : '<p class="note warn" style="margin-top:0">Ajoute l’adresse de ton client pour qu’il voie ce projet.</p>';
   h += `<form class="mrow add" id="addMem" novalidate><div><input class="in" id="mEmail" type="email" placeholder="adresse@client.fr" aria-label="Adresse e-mail"><input class="in" id="mName" placeholder="Prénom (facultatif)" aria-label="Prénom"></div><select class="in" id="mRole" aria-label="Rôle">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}">${v[0]}</option>`).join('')}</select><button class="btn" type="submit">Ajouter</button></form>`;
-  h += `<p class="note">${Object.values(ROLES).map(v => `<b>${v[0]}</b> : ${v[1]}`).join(' · ')}. Envoie l’invitation par WhatsApp ou e-mail : ton client tape son adresse sur la page, reçoit un lien et arrive sur son projet.</p></div>`;
+  h += `<p class="note">${Object.values(ROLES).map(v => `<b>${v[0]}</b> : ${v[1]}`).join(' · ')}. « Envoyer par Gmail » ouvre le message prêt dans Gmail (il reste à cliquer sur Envoyer) ; « Copier l’invitation » pour WhatsApp. Ton client tape son adresse sur la page, reçoit un lien et arrive sur son projet.</p></div>`;
   return h;
 }
 /* infos du projet */
@@ -1066,7 +1074,7 @@ function postsAdmin() {
   const tabs = [['todo', 'À traiter', all.filter(todo).length], ['all', 'Tous', all.length], ['pub', 'Publiés', all.filter(p => p.state === 'published').length]];
   const list = pFilter === 'todo' ? all.filter(todo) : pFilter === 'pub' ? all.filter(p => p.state === 'published') : all;
   const nW = all.filter(p => pstat(p).k === 'wait').length;
-  let h = `<h2>Posts <small>${all.length} au total</small></h2><div class="card" id="postsA"><div class="acts" style="margin-top:0"><button class="btn primary" data-pa="new">Nouveau post</button><span class="seg">${tabs.map(t => `<button data-pft="${t[0]}" aria-pressed="${pFilter === t[0]}">${t[1]} (${t[2]})</button>`).join('')}</span>${nW ? `<button class="btn sm ghost" data-pa="remind">Copier un rappel (${nW} en attente)</button>` : ''}</div>`;
+  let h = `<h2>Posts <small>${all.length} au total</small></h2><div class="card" id="postsA"><div class="acts" style="margin-top:0"><button class="btn primary" data-pa="new">Nouveau post</button><span class="seg">${tabs.map(t => `<button data-pft="${t[0]}" aria-pressed="${pFilter === t[0]}">${t[1]} (${t[2]})</button>`).join('')}</span>${nW ? `<button class="btn sm" data-pa="remindMail">Envoyer un rappel par Gmail (${nW} en attente)</button><button class="btn sm ghost" data-pa="remind">Copier le rappel</button>` : ''}</div>`;
   if (!list.length) h += `<p class="empty">${pFilter === 'todo' ? 'Rien à traiter. Crée le prochain post !' : 'Aucun post.'}</p>`;
   let month = '';
   list.forEach(p => {
@@ -1387,6 +1395,7 @@ async function adminClick(e) {
   if (mr && b.dataset.ma) {
     const m = MEMBERS.find(x => x.email === mr.dataset.mem);
     if (b.dataset.ma === 'inv') copy(invite(m), 'Invitation copiée : colle-la dans WhatsApp ou un e-mail');
+    if (b.dataset.ma === 'gmail' || b.dataset.ma === 'mailto') sendMail(b.dataset.ma, [m.email], inviteSubject(), invite(m));
     if (b.dataset.ma === 'del') confirmBtn(b, async () => { const {error} = await sb.from('members').delete().eq('project_id', P.id).eq('email', m.email); if (error) { toast('Impossible pour le moment'); return; } MEMBERS = MEMBERS.filter(x => x !== m); renderAdmin(); toast('Accès retiré'); }, 'Retirer ?');
     return;
   }
@@ -1413,6 +1422,7 @@ async function adminClick(e) {
     return;
   }
   if (b.dataset.pa === 'remind') { copy(reminder(), 'Rappel copié : colle-le dans WhatsApp ou un e-mail'); return; }
+  if (b.dataset.pa === 'remindMail') { const to = MEMBERS.filter(x => x.role !== 'compta').map(x => x.email); if (!to.length) { toast('Ajoute d’abord l’adresse de ton client dans « Accès client »'); return; } sendMail('gmail', to, T('Des posts attendent votre validation', 'Des posts attendent ta validation') + ' · Coup de Com’', reminder()); return; }
   const pr = b.closest('[data-pid]');
   if (pr) {
     const p = POSTS.find(x => x.id === pr.dataset.pid), k = b.dataset.pa;
