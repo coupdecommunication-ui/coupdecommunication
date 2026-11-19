@@ -1276,7 +1276,7 @@ function briefAdmin() {
   const d = BD();
   let h = prospect() ? `<h2>Questionnaire de découverte</h2><div class="card">` : `<h2>Brief de démarrage</h2><div class="card"><label class="chk" style="margin-top:0"><input type="checkbox" data-f="brief" ${D.brief !== false ? 'checked' : ''}> Proposer le questionnaire de démarrage au client</label>`;
   if (BRIEF && BRIEF.submitted) h += `<p${prospect() ? ' style="margin-top:0"' : ''}><span class="pill ok">Reçu le ${fdt(BRIEF.submitted_at)}</span>${BRIEF.updated_by ? ` <span class="note">par ${esc(BRIEF.updated_by)}</span>` : ''}</p>${briefAnswers(d)}<div class="acts"><button class="btn sm primary" data-ba2="toAtelier">Copier pour l’Atelier (devis)</button><button class="btn sm" data-ba2="reopen">Rouvrir au client</button></div>`;
-  else if (BRIEF && Object.keys(d).length) h += `<p class="note">En cours de remplissage par le client (dernière modification le ${fdt(BRIEF.updated_at)}).</p><details><summary>Voir les réponses déjà saisies</summary>${briefAnswers(d)}<div class="acts"><button class="btn sm" data-ba2="toAtelier">Copier pour l’Atelier (devis)</button></div></details>`;
+  else if (BRIEF && Object.keys(d).length) h += `<p class="note">En cours de remplissage par le client (dernière modification le ${fdt(BRIEF.updated_at)}).</p><details><summary>Voir les réponses déjà saisies</summary>${briefAnswers(d)}<div class="acts"><button class="btn sm" data-ba2="toAtelier">Copier pour l’Atelier (devis)</button></div></details><div class="acts"><button class="btn sm" data-ba2="close">Refermer (marquer comme reçu)</button></div>`;
   else h += `<p class="note"${prospect() ? ' style="margin-top:0"' : ''}>${prospect() ? 'Le prospect n’a pas encore commencé. Ajoute son adresse dans « Accès client » et envoie-lui l’invitation.' : 'Le client n’a pas encore commencé.'}</p>`;
   return h + '</div>';
 }
@@ -1502,7 +1502,8 @@ async function adminClick(e) {
 
   /* brief */
   if (b.dataset.ba2 === 'toAtelier') { copy(briefExport(), 'Copié : dans l’Atelier, touche « Importer de l’Espace client » et colle'); return; }
-  if (b.dataset.ba2 === 'reopen') { const {data, error} = await sb.from('briefs').update({submitted:false}).eq('project_id', P.id).select().single(); if (error) { toast('Impossible pour le moment'); return; } BRIEF = data; renderAdmin(); toast('Brief rouvert : le client peut le modifier et le renvoyer'); return; }
+  if (b.dataset.ba2 === 'reopen') { confirmBtn(b, async () => { const {data, error} = await sb.from('briefs').update({submitted:false}).eq('project_id', P.id).select().single(); if (error) { toast('Impossible pour le moment'); return; } BRIEF = data; renderAdmin(); toast('Rouvert : le client peut le modifier. Tu peux le refermer quand tu veux.'); }, 'Sûr ? Le client pourra le modifier'); return; }
+  if (b.dataset.ba2 === 'close') { const {data, error} = await sb.from('briefs').update({submitted:true}).eq('project_id', P.id).select().single(); if (error) { toast('Impossible pour le moment'); return; } BRIEF = data; renderAdmin(); toast('Questionnaire refermé : le client ne peut plus le modifier'); return; }
 
   /* livrables */
   if (b.dataset.la === 'add') {
