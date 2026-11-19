@@ -204,9 +204,13 @@ create table if not exists public.billing (
   fname text not null default '',
   accepted_at timestamptz,
   accepted_by text,
+  lines jsonb not null default '[]'::jsonb,
+  extra jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table public.billing add column if not exists lines jsonb not null default '[]'::jsonb;
+alter table public.billing add column if not exists extra jsonb not null default '{}'::jsonb;
 create index if not exists billing_project_idx on public.billing (project_id);
 alter table public.billing enable row level security;
 drop trigger if exists billing_touch on public.billing;

@@ -743,13 +743,19 @@ function billingClient(quotesOnly) {
   let h = `<h2>${quotesOnly ? 'Notre proposition' : 'Devis et factures'}</h2>`;
   if (!quotes.length && !inv.length) return h + '<p class="empty">Aucun document pour l’instant.</p>';
   const doc = b => fileUrl(b.file) ? `<a class="btn sm" href="${esc(fileUrl(b.file))}" target="_blank" rel="noopener">Voir le ${b.kind === 'quote' ? 'devis' : 'PDF'}</a>` : '';
-  if (quotes.length) h += `<div class="card"><h3 class="h3" style="margin-top:0">Devis</h3>${quotes.map(b => `<div class="inv"><div><b>${esc(b.label || 'Devis')}</b><small>${b.number ? 'N° ' + esc(b.number) + ' · ' : ''}${fd(b.issued)}</small></div><span class="amt">${eur(b.amount)}</span><span class="pill ${b.accepted_at ? 'ok' : 'wait'}">${b.accepted_at ? 'Accepté le ' + fd(b.accepted_at) : 'À accepter'}</span><div class="acts">${doc(b)}${!b.accepted_at && can.accept() ? `<button class="btn sm primary" data-accept="${esc(b.id)}">J’accepte ce devis</button>` : ''}</div></div>`).join('')}${quotes.some(b => !b.accepted_at) && can.accept() ? `<p class="note">En cliquant sur « J’accepte ce devis », ${T('vous donnez votre accord', 'tu donnes ton accord')} pour démarrer la mission aux conditions du devis. La date et ${T('votre', 'ton')} adresse e-mail sont enregistrées.</p>` : ''}</div>`;
+  if (quotes.length) h += `<div class="card"><h3 class="h3" style="margin-top:0">Devis</h3>${quotes.map(b => `<div class="inv"><div><b>${esc(b.label || 'Devis')}</b><small>${b.number ? 'N° ' + esc(b.number) + ' · ' : ''}${fd(b.issued)}</small></div><span class="amt">${eur(b.amount)}</span>${quoteLines(b)}<span class="pill ${b.accepted_at ? 'ok' : 'wait'}">${b.accepted_at ? 'Accepté le ' + fd(b.accepted_at) : 'À accepter'}</span><div class="acts">${doc(b)}${!b.accepted_at && can.accept() ? `<button class="btn sm primary" data-accept="${esc(b.id)}">J’accepte ce devis</button>` : ''}</div></div>`).join('')}${quotes.some(b => !b.accepted_at) && can.accept() ? `<p class="note">En cliquant sur « J’accepte ce devis », ${T('vous donnez votre accord', 'tu donnes ton accord')} pour démarrer la mission aux conditions du devis. La date et ${T('votre', 'ton')} adresse e-mail sont enregistrées.</p>` : ''}</div>`;
   if (inv.length) {
     const rest = inv.filter(b => b.status !== 'paid').reduce((s, b) => s + (+b.amount || 0), 0);
     h += `<div class="card"><h3 class="h3" style="margin-top:0">Factures</h3>${inv.map(b => { const late = b.status !== 'paid' && b.due && b.due < today(); return `<div class="inv"><div><b>${esc(b.label || 'Facture')}</b><small>${b.number ? 'N° ' + esc(b.number) + ' · ' : ''}${fd(b.issued)}${b.status !== 'paid' && b.due ? ' · à régler avant le ' + fd(b.due) : ''}</small></div><span class="amt">${eur(b.amount)}</span><span class="pill ${b.status === 'paid' ? 'ok' : late ? 'red' : 'wait'}">${b.status === 'paid' ? 'Payée' : late ? 'En retard' : 'À régler'}</span>${doc(b) ? `<div class="acts">${doc(b)}</div>` : ''}</div>`; }).join('')}<div class="sum"><span>Reste à régler</span><span>${eur(rest)}</span></div></div>`;
     if (rest > 0) h += payBlock();
   }
   return h;
+}
+function quoteLines(b) {
+  const L = Array.isArray(b.lines) ? b.lines.filter(l => l && l.label) : []; if (!L.length) return '';
+  const row = l => `<tr><td>${esc(l.label)}${+l.qty > 1 ? ` <span class="note">× ${+l.qty}</span>` : ''}</td><td>${l.type === 'mois' ? eur((+l.price || 0) * (+l.qty || 1)) + ' / mois' : eur((+l.price || 0) * (+l.qty || 1))}</td></tr>`;
+  const x = b.extra || {};
+  return `<details class="qlines"><summary>Voir le détail</summary><table>${L.map(row).join('')}</table>${x.months && L.some(l => l.type === 'mois') ? `<p class="note">Abonnement sur ${+x.months} mois${x.discount ? ` · remise ${+x.discount} %` : ''}.</p>` : ''}${x.vat ? '<p class="note">Montant TTC (TVA 20 % incluse).</p>' : '<p class="note">Montant hors taxes.</p>'}${x.notes ? `<p class="qnote">${esc(x.notes)}</p>` : ''}</details>`;
 }
 function payBlock() {
   const a = AGENCY || {}; if (!a.iban && !okUrl(a.revolut)) return '';
@@ -913,6 +919,7 @@ function impParse(text) {
   const i = text.indexOf('{'), j = text.lastIndexOf('}');
   if (i < 0 || j < i) throw new Error('Rien à lire : colle le texte copié depuis l’Atelier.');
   let o; try { o = JSON.parse(text.slice(i, j + 1)); } catch (e) { throw new Error('Le texte est incomplet : recopie-le depuis l’Atelier.'); }
+  if (o.format === 'coupdecom-devis') return [impQuote(o)];
   if (o.format !== 'coupdecom-atelier' || !Array.isArray(o.items)) throw new Error('Ce texte ne vient pas de l’Atelier Coup de Com’.');
   return o.items.slice(0, 60).map(x => ({
     atelierId:clip(x.atelierId, 80), kind:x.kind === 'prospect' ? 'prospect' : 'client', name:clip(x.name, 120) || 'Sans nom',
@@ -922,20 +929,29 @@ function impParse(text) {
     pack:clip(x.pack, 80), nextAction:clip(x.nextAction, 200), nextDate:/^\d{4}-\d{2}-\d{2}$/.test(x.nextDate || '') ? x.nextDate : '',
     tasks:(Array.isArray(x.tasks) ? x.tasks : []).slice(0, 40).map(t => ({id:'at-' + clip(t.id || uid(), 40), t:clip(t.t, 160), s:IMP_ST[t.s] || 'todo', d:/^\d{4}-\d{2}-\d{2}$/.test(t.d || '') ? t.d : ''})).filter(t => t.t)}));
 }
+function impQuote(o) {
+  const num = n => Math.round((+n || 0) * 100) / 100, day = v => /^\d{4}-\d{2}-\d{2}$/.test(v || '') ? v : '';
+  return {quote:true, atelierId:clip(o.atelierId, 80), projectId:clip(o.projectId, 40), name:clip(o.client, 120) || 'Sans nom', label:clip(o.label, 160) || 'Devis', number:clip(o.number, 40), amount:num(o.amount),
+    issued:day(o.issued), due:day(o.validUntil), lines:(Array.isArray(o.lines) ? o.lines : []).slice(0, 40).map(l => ({label:clip(l.label, 160), qty:Math.max(1, Math.min(999, +l.qty || 1)), price:num(l.price), type:l.type === 'mois' ? 'mois' : 'unique'})).filter(l => l.label),
+    extra:{months:Math.max(0, Math.min(60, +o.months || 0)), discount:Math.max(0, Math.min(100, +o.discount || 0)), vat:!!o.vat, notes:clip(o.notes, 1500)}};
+}
 function impMatch(it) {
+  if (it.quote) return LIST.find(p => p.id === it.projectId) || LIST.find(p => it.atelierId && (p.data || {}).atelierId === it.atelierId) || LIST.find(p => !p.archived && normN((p.data || {}).client) === normN(it.name) && normN(it.name));
   return LIST.find(p => (p.data || {}).atelierId && p.data.atelierId === it.atelierId) || LIST.find(p => !p.archived && normN((p.data || {}).client) === normN(it.name) && normN(it.name));
 }
 function impBox() {
   if (!IMP) return '';
   if (!IMP.items) return `<div class="card imp"><h3 style="margin-top:0">Importer depuis l’Atelier</h3>
-    <p class="note" style="margin-top:0">Dans l’Atelier, ouvre la fiche du client ou du prospect et touche <b>« Espace client »</b>, puis <b>« Copier »</b>. Colle le texte ici, ou dépose le fichier .txt / .json si tu l’as enregistré.</p>
+    <p class="note" style="margin-top:0">Dans l’Atelier, ouvre la fiche du client ou du prospect et touche <b>« Espace client »</b> (ou, pour un devis validé, <b>« Copier pour l’Espace client »</b>), puis <b>« Copier »</b>. Colle le texte ici, ou dépose le fichier .txt / .json si tu l’as enregistré.</p>
     <textarea class="in" id="impT" rows="6" placeholder="Colle ici le texte copié depuis l’Atelier"></textarea>
     <div class="impdrop" id="impD">Ou dépose un fichier ici · <button class="linkbtn" data-imp="file">choisir un fichier</button></div>
     ${IMP.err ? `<p class="note warn">${esc(IMP.err)}</p>` : ''}
     <div class="acts"><button class="btn primary" data-imp="read">Lire</button><button class="btn ghost" data-imp="close">Annuler</button></div></div>`;
   return `<div class="card imp"><h3 style="margin-top:0">${IMP.items.length} fiche${IMP.items.length > 1 ? 's' : ''} à importer</h3>
     <p class="note" style="margin-top:0">Vérifie puis importe. Une fiche déjà importée est mise à jour (nom, prochaine étape, avancement venu de l’Atelier) : ce que tu as ajouté ici à la main est gardé. Rien n’est envoyé au client : l’invitation reste à copier dans le projet.</p>
-    <div class="implist">${IMP.items.map((it, i) => { const ex = impMatch(it); return `<label class="improw"><input type="checkbox" data-imc="${i}" ${it.skip ? '' : 'checked'}>
+    <div class="implist">${IMP.items.map((it, i) => { const ex = impMatch(it); if (it.quote) return `<label class="improw"><input type="checkbox" data-imc="${i}" ${it.skip ? '' : 'checked'}>
+      <span><b>Devis ${esc(it.number)} · ${esc(it.label)}</b><small>${eur(it.amount)} · ${it.lines.length} ligne${it.lines.length > 1 ? 's' : ''}${it.due ? ' · valable jusqu’au ' + fd(it.due) : ''}</small>
+      <small>${ex ? `Pour <span class="pill ok">${esc((ex.data || {}).client || 'projet')}</span> : le client le verra dans « ${(ex.data || {}).stage === 'prospect' ? 'Notre proposition' : 'Devis et factures'} » et pourra l’accepter` : '<span class="pill wait">Aucun projet trouvé</span> : importe d’abord la fiche du client'}</small></span></label>`; return `<label class="improw"><input type="checkbox" data-imc="${i}" ${it.skip ? '' : 'checked'}>
       <span><b>${esc(it.name)}</b><small>${it.kind === 'prospect' ? 'Prospect · espace découverte' : 'Client signé'}${it.city ? ' · ' + esc(it.city) : ''} · ${ex ? `<span class="pill wait">mise à jour de « ${esc((ex.data || {}).project || (ex.data || {}).client || 'projet')} »</span>` : '<span class="pill ok">nouveau projet</span>'}</small>
       <small>${it.tasks.length ? it.tasks.length + ' étape' + (it.tasks.length > 1 ? 's' : '') + ' d’avancement · ' : ''}${it.nextAction ? 'Prochaine étape : ' + esc(it.nextAction) : 'Pas de prochaine étape'}</small>
       ${it.email ? `<small><input type="checkbox" data-ima="${i}" ${it.noAccess ? '' : 'checked'}> Donner l’accès à ${esc(it.email)} (gérant)</small>` : '<small class="warn">Pas d’e-mail : tu ajouteras l’accès dans le projet</small>'}</span></label>`; }).join('')}</div>
@@ -950,6 +966,12 @@ async function impRun(btn) {
   btn.disabled = true; let ok = 0, fail = 0;
   for (const it of its) {
     try {
+      if (it.quote) { const ex = impMatch(it); if (!ex) throw new Error('no project');
+        const row = {project_id:ex.id, kind:'quote', label:it.label, number:it.number, amount:it.amount, issued:it.issued || null, due:it.due || null, lines:it.lines, extra:it.extra};
+        const {data:old} = await sb.from('billing').select('id,accepted_at').eq('project_id', ex.id).eq('kind', 'quote').eq('number', it.number).maybeSingle();
+        if (old && old.accepted_at) throw new Error('already accepted');
+        const {error} = old ? await sb.from('billing').update(row).eq('id', old.id) : await sb.from('billing').insert(row); if (error) throw error;
+        ok++; continue; }
       const ex = impMatch(it), nets = [it.instagram && 'instagram', it.facebook && 'facebook', it.tiktok && 'tiktok'].filter(Boolean);
       let id;
       if (ex) {
@@ -1244,11 +1266,17 @@ function csvAggregate() {
 }
 
 /* brief */
+/* questionnaire -> Atelier (pour préparer le devis) */
+function briefExport() {
+  const d = BD(), ans = questions().filter(x => answered(d, x)).map(x => ({k:x.k, l:x.l, a:ansText(d, x), v:x.type === 'chips' ? (d[x.k] || []) : String(d[x.k] || '')}));
+  return JSON.stringify({format:'coupdecom-espace', v:1, exportedAt:new Date().toISOString(), projectId:P.id, atelierId:D.atelierId || '', client:D.client || '', project:D.project || '', stage:D.stage || 'client',
+    submittedAt:(BRIEF && BRIEF.submitted_at) || '', answers:ans, voiceCount:(d.voice || []).length, fileCount:(d.files || []).length}, null, 1);
+}
 function briefAdmin() {
   const d = BD();
   let h = prospect() ? `<h2>Questionnaire de découverte</h2><div class="card">` : `<h2>Brief de démarrage</h2><div class="card"><label class="chk" style="margin-top:0"><input type="checkbox" data-f="brief" ${D.brief !== false ? 'checked' : ''}> Proposer le questionnaire de démarrage au client</label>`;
-  if (BRIEF && BRIEF.submitted) h += `<p${prospect() ? ' style="margin-top:0"' : ''}><span class="pill ok">Reçu le ${fdt(BRIEF.submitted_at)}</span>${BRIEF.updated_by ? ` <span class="note">par ${esc(BRIEF.updated_by)}</span>` : ''}</p>${briefAnswers(d)}<div class="acts"><button class="btn sm" data-ba2="reopen">Rouvrir au client</button></div>`;
-  else if (BRIEF && Object.keys(d).length) h += `<p class="note">En cours de remplissage par le client (dernière modification le ${fdt(BRIEF.updated_at)}).</p><details><summary>Voir les réponses déjà saisies</summary>${briefAnswers(d)}</details>`;
+  if (BRIEF && BRIEF.submitted) h += `<p${prospect() ? ' style="margin-top:0"' : ''}><span class="pill ok">Reçu le ${fdt(BRIEF.submitted_at)}</span>${BRIEF.updated_by ? ` <span class="note">par ${esc(BRIEF.updated_by)}</span>` : ''}</p>${briefAnswers(d)}<div class="acts"><button class="btn sm primary" data-ba2="toAtelier">Copier pour l’Atelier (devis)</button><button class="btn sm" data-ba2="reopen">Rouvrir au client</button></div>`;
+  else if (BRIEF && Object.keys(d).length) h += `<p class="note">En cours de remplissage par le client (dernière modification le ${fdt(BRIEF.updated_at)}).</p><details><summary>Voir les réponses déjà saisies</summary>${briefAnswers(d)}<div class="acts"><button class="btn sm" data-ba2="toAtelier">Copier pour l’Atelier (devis)</button></div></details>`;
   else h += `<p class="note"${prospect() ? ' style="margin-top:0"' : ''}>${prospect() ? 'Le prospect n’a pas encore commencé. Ajoute son adresse dans « Accès client » et envoie-lui l’invitation.' : 'Le client n’a pas encore commencé.'}</p>`;
   return h + '</div>';
 }
@@ -1473,6 +1501,7 @@ async function adminClick(e) {
   }
 
   /* brief */
+  if (b.dataset.ba2 === 'toAtelier') { copy(briefExport(), 'Copié : dans l’Atelier, touche « Importer de l’Espace client » et colle'); return; }
   if (b.dataset.ba2 === 'reopen') { const {data, error} = await sb.from('briefs').update({submitted:false}).eq('project_id', P.id).select().single(); if (error) { toast('Impossible pour le moment'); return; } BRIEF = data; renderAdmin(); toast('Brief rouvert : le client peut le modifier et le renvoyer'); return; }
 
   /* livrables */
