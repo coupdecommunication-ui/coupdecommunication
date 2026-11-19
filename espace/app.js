@@ -751,11 +751,19 @@ function billingClient(quotesOnly) {
   }
   return h;
 }
+function trialOffer(tr) {
+  if (!tr || !tr.kind) return '';
+  const n = +tr.months || 1;
+  let h = tr.kind === 'free' ? (n > 1 ? `Les ${n} premiers mois sont offerts` : 'Le premier mois est offert') + T(' : vous testez sans risque.', ' : tu testes sans risque.')
+    : (n > 1 ? `Les ${n} premiers mois sont à ${eur(tr.price)} au lieu de ${eur(tr.monthly)}` : `Le premier mois est à ${eur(tr.price)} au lieu de ${eur(tr.monthly)}`) + '.';
+  if (tr.fallback && tr.fallbackLabel) h += ' ' + T(`Ensuite, si ce n’est pas assez rentable pour vous, vous pourrez passer au ${tr.fallbackLabel} (${eur(tr.fallbackPrice)} / mois).`, `Ensuite, si ce n’est pas assez rentable pour toi, tu pourras passer au ${tr.fallbackLabel} (${eur(tr.fallbackPrice)} / mois).`);
+  return `<div class="qoffer"><span>🎁</span><p>${esc(h)}</p></div>`;
+}
 function quoteLines(b) {
-  const L = Array.isArray(b.lines) ? b.lines.filter(l => l && l.label) : []; if (!L.length) return '';
+  const L = Array.isArray(b.lines) ? b.lines.filter(l => l && l.label) : [], tr = (b.extra || {}).trial; if (!L.length) return trialOffer(tr);
   const row = l => `<tr><td>${esc(l.label)}${+l.qty > 1 ? ` <span class="note">× ${+l.qty}</span>` : ''}</td><td>${l.type === 'mois' ? eur((+l.price || 0) * (+l.qty || 1)) + ' / mois' : eur((+l.price || 0) * (+l.qty || 1))}</td></tr>`;
   const x = b.extra || {};
-  return `<details class="qlines"><summary>Voir le détail</summary><table>${L.map(row).join('')}</table>${x.months && L.some(l => l.type === 'mois') ? `<p class="note">Abonnement sur ${+x.months} mois${x.discount ? ` · remise ${+x.discount} %` : ''}.</p>` : ''}${x.vat ? '<p class="note">Montant TTC (TVA 20 % incluse).</p>' : '<p class="note">Montant hors taxes.</p>'}${x.notes ? `<p class="qnote">${esc(x.notes)}</p>` : ''}</details>`;
+  return `${trialOffer(tr)}<details class="qlines"><summary>Voir le détail</summary><table>${L.map(row).join('')}${tr && tr.value ? `<tr class="qgift"><td>🎁 ${tr.kind === 'free' ? (+tr.months > 1 ? `${+tr.months} mois offerts` : 'Premier mois offert') : 'Réduction de démarrage'}</td><td>− ${eur(tr.value)}</td></tr>` : ''}</table>${x.months && L.some(l => l.type === 'mois') ? `<p class="note">Abonnement sur ${+x.months} mois${x.discount ? ` · remise ${+x.discount} %` : ''}.</p>` : ''}${x.vat ? '<p class="note">Montant TTC (TVA 20 % incluse).</p>' : '<p class="note">Montant hors taxes.</p>'}${x.notes ? `<p class="qnote">${esc(x.notes)}</p>` : ''}</details>`;
 }
 function payBlock() {
   const a = AGENCY || {}; if (!a.iban && !okUrl(a.revolut)) return '';
@@ -933,7 +941,8 @@ function impQuote(o) {
   const num = n => Math.round((+n || 0) * 100) / 100, day = v => /^\d{4}-\d{2}-\d{2}$/.test(v || '') ? v : '';
   return {quote:true, atelierId:clip(o.atelierId, 80), projectId:clip(o.projectId, 40), name:clip(o.client, 120) || 'Sans nom', label:clip(o.label, 160) || 'Devis', number:clip(o.number, 40), amount:num(o.amount),
     issued:day(o.issued), due:day(o.validUntil), lines:(Array.isArray(o.lines) ? o.lines : []).slice(0, 40).map(l => ({label:clip(l.label, 160), qty:Math.max(1, Math.min(999, +l.qty || 1)), price:num(l.price), type:l.type === 'mois' ? 'mois' : 'unique'})).filter(l => l.label),
-    extra:{months:Math.max(0, Math.min(60, +o.months || 0)), discount:Math.max(0, Math.min(100, +o.discount || 0)), vat:!!o.vat, notes:clip(o.notes, 1500)}};
+    extra:{months:Math.max(0, Math.min(60, +o.months || 0)), discount:Math.max(0, Math.min(100, +o.discount || 0)), vat:!!o.vat, notes:clip(o.notes, 1500),
+      trial:o.trial && (o.trial.kind === 'free' || o.trial.kind === 'reduced') ? {kind:o.trial.kind, months:Math.max(1, Math.min(6, +o.trial.months || 1)), price:num(o.trial.price), monthly:num(o.trial.monthly), value:num(o.trial.value), fallback:!!o.trial.fallback, fallbackLabel:clip(o.trial.fallbackLabel, 60), fallbackPrice:num(o.trial.fallbackPrice)} : null}};
 }
 function impMatch(it) {
   if (it.quote) return LIST.find(p => p.id === it.projectId) || LIST.find(p => it.atelierId && (p.data || {}).atelierId === it.atelierId) || LIST.find(p => !p.archived && normN((p.data || {}).client) === normN(it.name) && normN(it.name));
