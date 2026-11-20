@@ -149,6 +149,11 @@ nav.main .ind{position:absolute;top:0;left:0;height:100%;border-radius:999px;bac
 .menu-open #mmenu a.l span{transform:none}
 #mmenu a.l:nth-child(2) span{transition-delay:.05s}#mmenu a.l:nth-child(3) span{transition-delay:.1s}#mmenu a.l:nth-child(4) span{transition-delay:.15s}#mmenu a.l:nth-child(5) span{transition-delay:.2s}#mmenu a.l:nth-child(6) span{transition-delay:.25s}#mmenu a.l:nth-child(7) span{transition-delay:.3s}
 #mmenu .mm-foot{margin-top:40px;color:var(--doux);font-size:15px}
+.h-espace{display:inline-flex;align-items:center;gap:8px;margin-left:auto;padding:11px 16px;border-radius:999px;border:1px solid var(--ligne);font-size:15px;font-weight:500;white-space:nowrap;color:var(--foret);text-decoration:none;transition:background .3s,color .3s,border-color .3s}
+.h-espace:hover{background:var(--foret);color:var(--creme);border-color:var(--foret)}
+header.site nav.main{margin-right:auto}
+#mmenu .mm-espace{display:inline-flex;align-items:center;gap:10px;margin-top:22px;padding:14px 22px;border-radius:999px;background:var(--peche);color:var(--foret);font-size:18px;font-weight:500;text-decoration:none}
+@media (max-width:1020px){.h-espace{padding:0;width:48px;height:48px;justify-content:center;border-color:var(--ligne)}.h-espace span{display:none}.h-espace svg{width:18px;height:18px}}
 @media (max-width:1180px){.h-cta{display:none}}
 @media (max-width:1020px){nav.main,.h-cta{display:none}.burger{display:block}}
 
@@ -724,11 +729,13 @@ footer .fsym{position:absolute;right:-6vw;top:40px;width:38vw;max-width:520px;co
     <span class="ind" aria-hidden="true"></span>
     <a href="#accueil">Accueil</a><a href="#services">Services</a><a href="#realisations">Réalisations</a><a href="#quel-pack">Quel pack ?</a><a href="#a-propos">À propos</a><a href="#avis">Avis</a><a href="#contact">Contact</a>
   </nav>
+  <a href="/espace/" class="h-espace" aria-label="Espace client"><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Espace client</span></a>
   <a href="#contact" class="btn h-cta" data-magnet>Appel offert <span class="arr"><svg width="14" height="14"><use href="#arr"/></svg></span></a>
   <button class="burger" aria-label="Ouvrir le menu" aria-expanded="false"><span></span><span></span></button>
 </header>
 <div id="mmenu" aria-hidden="true">
   <a class="l" href="#accueil"><span>Accueil</span></a><a class="l" href="#services"><span>Services</span></a><a class="l" href="#realisations"><span>Réalisations</span></a><a class="l" href="#quel-pack"><span>Quel pack ?</span></a><a class="l" href="#a-propos"><span>À propos</span></a><a class="l" href="#avis"><span>Avis</span></a><a class="l" href="#contact"><span>Contact</span></a>
+  <a class="mm-espace" href="/espace/"><svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg> Espace client</a>
   <div class="mm-foot">coupdecommunication@gmail.com<br>07 51 37 71 14</div>
 </div>
 
@@ -1150,7 +1157,7 @@ footer .fsym{position:absolute;right:-6vw;top:40px;width:38vw;max-width:520px;co
     <div class="hero-ctas on-dark" style="margin-top:36px;background:none"><a href="#contact" class="btn peche" data-magnet>Réserver un appel découverte <span class="arr"><svg width="14" height="14"><use href="#arr"/></svg></span></a></div>
     <div class="cols">
       <div><svg class="logo-h" viewBox="0 0 5401.2 1423.0" role="img" aria-label="Coup de Com'"><use href="#logoH"/></svg><p style="margin-top:20px;color:var(--doux);max-width:36ch">Communication digitale &amp; visuelle pour les lieux qui accueillent : restaurants, lieux de réception, culture et associations.</p></div>
-      <div><h4>Pages</h4><ul><li><a href="#accueil">Accueil</a></li><li><a href="#services">Services &amp; tarifs</a></li><li><a href="#realisations">Réalisations</a></li><li><a href="#quel-pack">Quel pack pour moi ?</a></li><li><a href="#a-propos">À propos</a></li><li><a href="#avis">Avis</a></li><li><a href="#contact">Contact</a></li></ul></div>
+      <div><h4>Pages</h4><ul><li><a href="#accueil">Accueil</a></li><li><a href="#services">Services &amp; tarifs</a></li><li><a href="#realisations">Réalisations</a></li><li><a href="#quel-pack">Quel pack pour moi ?</a></li><li><a href="#a-propos">À propos</a></li><li><a href="#avis">Avis</a></li><li><a href="#contact">Contact</a></li><li><a href="/espace/">Espace client</a></li></ul></div>
       <div><h4>Contact</h4><ul><li><a href="mailto:coupdecommunication@gmail.com">coupdecommunication@gmail.com</a></li><li><a href="tel:+33751377114">07 51 37 71 14</a></li><li style="color:var(--doux)">En visio ou sur place</li></ul></div>
     </div>
     <div class="legal"><span>© <span id="yr"></span> Coup de Com' · Sarath Adamou · SIRET 935 072 041 00012 · <a href="/mentions-legales/" style="color:inherit;text-decoration:underline">Mentions légales</a></span><span>Fait avec soin, aux couleurs de la marque.</span></div>
