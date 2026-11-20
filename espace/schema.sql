@@ -237,6 +237,21 @@ end $$;
 revoke all on function public.accept_quote(uuid) from public, anon;
 grant execute on function public.accept_quote(uuid) to authenticated;
 
+-- Retour du client sur un devis (pack préféré, question) : enregistré dans billing.extra.feedback
+create or replace function public.quote_feedback(b uuid, pack text, msg text) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare ok boolean;
+begin
+  update public.billing
+     set extra = coalesce(extra, '{}'::jsonb) || jsonb_build_object('feedback', jsonb_build_object(
+           'pack', left(coalesce(pack, ''), 40), 'msg', left(coalesce(msg, ''), 1500), 'by', public.my_email(), 'at', now()))
+   where id = b and kind = 'quote' and accepted_at is null and public.has_role(project_id, '{gerant,compta}');
+  get diagnostics ok = row_count;
+  return ok;
+end $$;
+revoke all on function public.quote_feedback(uuid, text, text) from public, anon;
+grant execute on function public.quote_feedback(uuid, text, text) to authenticated;
+
 -- Toutes les factures du projet sont-elles payées ?
 create or replace function public.all_paid(p uuid) returns boolean
 language sql stable security definer set search_path = public as $$

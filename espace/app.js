@@ -744,12 +744,30 @@ function billingClient(quotesOnly) {
   if (!quotes.length && !inv.length) return h + '<p class="empty">Aucun document pour l’instant.</p>';
   const doc = b => fileUrl(b.file) ? `<a class="btn sm" href="${esc(fileUrl(b.file))}" target="_blank" rel="noopener">Voir le ${b.kind === 'quote' ? 'devis' : 'PDF'}</a>` : '';
   if (quotes.length) h += `<div class="card"><h3 class="h3" style="margin-top:0">Devis</h3>${quotes.map(b => `<div class="inv"><div><b>${esc(b.label || 'Devis')}</b><small>${b.number ? 'N° ' + esc(b.number) + ' · ' : ''}${fd(b.issued)}</small></div><span class="amt">${eur(b.amount)}</span>${quoteLines(b)}<span class="pill ${b.accepted_at ? 'ok' : 'wait'}">${b.accepted_at ? 'Accepté le ' + fd(b.accepted_at) : 'À accepter'}</span><div class="acts">${doc(b)}${!b.accepted_at && can.accept() ? `<button class="btn sm primary" data-accept="${esc(b.id)}">J’accepte ce devis</button>` : ''}</div></div>`).join('')}${quotes.some(b => !b.accepted_at) && can.accept() ? `<p class="note">En cliquant sur « J’accepte ce devis », ${T('vous donnez votre accord', 'tu donnes ton accord')} pour démarrer la mission aux conditions du devis. La date et ${T('votre', 'ton')} adresse e-mail sont enregistrées.</p>` : ''}</div>`;
+  const openQ = quotes.filter(b => !b.accepted_at); if (openQ.length) h += packsCompare(openQ[openQ.length - 1]);
   if (inv.length) {
     const rest = inv.filter(b => b.status !== 'paid').reduce((s, b) => s + (+b.amount || 0), 0);
     h += `<div class="card"><h3 class="h3" style="margin-top:0">Factures</h3>${inv.map(b => { const late = b.status !== 'paid' && b.due && b.due < today(); return `<div class="inv"><div><b>${esc(b.label || 'Facture')}</b><small>${b.number ? 'N° ' + esc(b.number) + ' · ' : ''}${fd(b.issued)}${b.status !== 'paid' && b.due ? ' · à régler avant le ' + fd(b.due) : ''}</small></div><span class="amt">${eur(b.amount)}</span><span class="pill ${b.status === 'paid' ? 'ok' : late ? 'red' : 'wait'}">${b.status === 'paid' ? 'Payée' : late ? 'En retard' : 'À régler'}</span>${doc(b) ? `<div class="acts">${doc(b)}</div>` : ''}</div>`; }).join('')}<div class="sum"><span>Reste à régler</span><span>${eur(rest)}</span></div></div>`;
     if (rest > 0) h += payBlock();
   }
   return h;
+}
+/* les 3 packs du site, pour comparer avec le devis (à garder identiques au site : index.html › PACKS et TARIFS) */
+const PACKS = [
+  {k:'light', n:'Light', p:290, w:'Pour démarrer sur de bonnes bases.', f:['Analyse de votre compte et recommandations', '2 à 4 visuels à vos couleurs', 'Thèmes des publications sur 4 semaines', 'Idées de stories', 'Bilan chiffré du mois']},
+  {k:'extra', n:'Extra', p:590, star:1, w:'Pour des réseaux qui tournent tout seuls.', f:['Stratégie éditoriale : ton, 1 à 2 thèmes, objectifs', 'Création des visuels pour chaque format', 'Calendrier complet et programmation', 'Stories avec visuels, textes et stickers', 'Bilan chiffré du mois']},
+  {k:'full', n:'Full', p:990, w:'Pour tout confier : réseaux et site web.', f:['Stratégie éditoriale : 3 à 6 thèmes', 'Visuels et rédaction complète des textes', 'Calendrier complet et programmation', 'Stories régulières', 'Article SEO et mise à jour du site chaque mois', 'Bilan chiffré avec analyse']}];
+function quotePack(b) { const t = ((b.lines || []).map(l => l.label).join(' ') + ' ' + (b.label || '')).toLowerCase(); return /\bfull\b/.test(t) ? 'full' : /\bextra\b/.test(t) ? 'extra' : /\blight\b/.test(t) ? 'light' : ''; }
+function packsCompare(b) {
+  const cur = quotePack(b), fb = (b.extra || {}).feedback, mine = can.bill() && !isAdmin;
+  const fbNote = fb ? `<div class="card fbsent"><b>✉️ ${T('Votre message a bien été envoyé', 'Ton message a bien été envoyé')}</b><p>${fd(fb.at)} · ${fb.pack ? `préférence pour le <b>${esc(fb.pack)}</b>. ` : ''}${esc(fb.msg || '')}</p><p class="note">${T('On revient vers vous très vite avec un devis ajusté.', 'On revient vers toi très vite avec un devis ajusté.')}</p></div>` : '';
+  return fbNote + `<details class="card packs" ${fb ? '' : 'open'}><summary><b>${T('Vous hésitez ?', 'Tu hésites ?')} Comparez nos 3 packs</b><span class="note">${cur ? T('Votre devis est basé sur le Pack ', 'Ton devis est basé sur le Pack ') + PACKS.find(p => p.k === cur).n + '.' : T('Pour situer votre devis.', 'Pour situer ton devis.')}</span></summary>
+    <div class="pk-grid">${PACKS.map(p => `<div class="pk ${p.k === cur ? 'cur' : ''}">${p.k === cur ? `<span class="pill ok">${T('Dans votre devis', 'Dans ton devis')}</span>` : p.star ? '<span class="pill">Le plus choisi</span>' : '<span class="pill ghostpill">&nbsp;</span>'}
+      <h4>Pack ${p.n}</h4><p class="note">${p.w}</p><div class="pk-amt"><small>à partir de</small><b>${eur(p.p).replace(',00', '')}</b><small>/ mois</small></div>
+      <ul>${p.f.map(x => `<li>${esc(x)}</li>`).join('')}</ul>${mine && p.k !== cur ? `<button class="btn sm" data-pk="Pack ${p.n}" data-pb="${esc(b.id)}">Je préfère le Pack ${p.n}</button>` : ''}</div>`).join('')}</div>
+    <p class="note">Ce sont les tarifs de départ du site. ${T('Votre devis est fait sur mesure', 'Ton devis est fait sur mesure')} : on peut l’ajuster ensemble.</p>
+    ${mine ? `<div class="acts"><button class="btn sm ghost" data-pk="" data-pb="${esc(b.id)}">${T('J’ai une question ou un doute sur le devis', 'J’ai une question ou un doute sur le devis')}</button></div><div id="pkForm"></div>` : ''}
+    ${isAdmin ? '<p class="note">Aperçu : ton client peut indiquer le pack qu’il préfère ou poser une question ; tu le verras sur le devis dans la gestion.</p>' : ''}</details>`;
 }
 function trialOffer(tr) {
   if (!tr || !tr.kind) return '';
@@ -783,6 +801,26 @@ async function clientClick(e) {
   if (b.dataset.cal) { CAL.m += +b.dataset.cal; if (CAL.m < 0) { CAL.m = 11; CAL.y--; } if (CAL.m > 11) { CAL.m = 0; CAL.y++; } $('#cal').innerHTML = calInner(POSTS.filter(p => p.state !== 'draft' && p.publish_at)); return; }
   if (b.dataset.rn) { REP.n = b.dataset.rn; refreshRep(); return; }
   if (b.dataset.copy) { copy(b.dataset.copy, 'IBAN copié'); return; }
+  if (b.dataset.pb !== undefined && b.dataset.pk !== undefined) {
+    const f = $('#pkForm'); if (!f) return; const pack = b.dataset.pk;
+    f.innerHTML = `<div class="pkf"><b>${pack ? 'Vous préférez le ' + esc(pack) : 'Votre question ou votre doute'}</b>
+      <textarea class="in" id="pkMsg" rows="3" placeholder="${pack ? 'ex. Le budget est un peu juste pour nous, on préfère commencer plus simplement.' : 'ex. Est-ce que le shooting est obligatoire ?'}"></textarea>
+      <div class="acts"><button class="btn sm primary" data-pksend="${esc(b.dataset.pb)}" data-pkp="${esc(pack)}">Envoyer à l’agence</button><button class="btn sm ghost" data-pkx="1">Annuler</button></div></div>`;
+    f.scrollIntoView({block:'nearest', behavior:reduced() ? 'auto' : 'smooth'}); setTimeout(() => { const t = $('#pkMsg'); if (t) t.focus(); }, 50); return;
+  }
+  if (b.dataset.pkx) { const f = $('#pkForm'); if (f) f.innerHTML = ''; return; }
+  if (b.dataset.pksend) {
+    if (isAdmin) { toast('Aperçu : seul ton client peut envoyer'); return; }
+    const msg = ($('#pkMsg') || {}).value || '', pack = b.dataset.pkp || '';
+    if (!pack && !msg.trim()) { toast('Écrivez votre question'); return; }
+    b.disabled = true;
+    const {data, error} = await sb.rpc('quote_feedback', {b:b.dataset.pksend, pack, msg:msg.trim()});
+    if (error || !data) { b.disabled = false; toast('L’envoi n’a pas fonctionné. Réessayez dans un instant.'); return; }
+    const q = BILL.find(x => x.id === b.dataset.pksend); q.extra = {...(q.extra || {}), feedback:{pack, msg:msg.trim(), by:email, at:new Date().toISOString()}};
+    renderClient(); toast('Message envoyé : l’agence revient vers vous');
+    mail(`retour sur le devis (${q.label || q.number || 'devis'})`, [`Projet : ${D.project || '—'} (${D.client || '—'})`, `Devis : ${q.label || '—'} ${q.number ? 'n° ' + q.number : ''}`, pack ? `Préférence : ${pack}` : 'Question sur le devis', `Message : ${msg.trim() || '—'}`]);
+    return;
+  }
   if (b.dataset.accept) {
     if (isAdmin) { toast('Aperçu : seul ton client peut accepter'); return; }
     confirmBtn(b, async () => {
@@ -1353,6 +1391,7 @@ function billingAdmin() {
     <label class="f">Date<input class="in" type="date" data-bf="issued" value="${esc(b.issued || '')}"></label>
     ${b.kind === 'invoice' ? `<label class="f">Échéance<input class="in" type="date" data-bf="due" value="${esc(b.due || '')}"></label><label class="f">Statut<select class="in" data-bf="status"><option value="due" ${b.status !== 'paid' ? 'selected' : ''}>À régler</option><option value="paid" ${b.status === 'paid' ? 'selected' : ''}>Payée</option></select></label>` : `<div class="f"><span>Acceptation</span>${b.accepted_at ? `<span class="pill ok">Accepté le ${fdt(b.accepted_at)}${b.accepted_by ? ' par ' + esc(b.accepted_by) : ''}</span>` : '<span class="pill wait">En attente du gérant</span>'}</div>`}
     <div class="f"><span>PDF</span><span class="acts" style="margin:0"><button class="btn sm" data-ba="up">${b.file ? 'Remplacer le PDF' : 'Importer le PDF'}</button>${b.file ? `<span class="note">${esc(b.fname || 'PDF importé')}</span>` : ''}</span></div></div>
+    ${b.kind === 'quote' && (b.extra || {}).feedback ? `<div class="qnote fbk">💬 <b>Retour du client</b> (${esc(b.extra.feedback.by || '')}, ${fd(b.extra.feedback.at)}) : ${b.extra.feedback.pack ? 'préfère le <b>' + esc(b.extra.feedback.pack) + '</b>. ' : ''}${esc(b.extra.feedback.msg || '')}</div>` : ''}
     <div class="acts">${b.kind === 'quote' && b.accepted_at ? '<button class="btn sm ghost" data-ba="unacc">Annuler l’acceptation</button>' : ''}<button class="btn sm ghost" data-ba="del">Supprimer</button></div></div>`).join('') || '<p class="empty">Aucun devis ni facture.</p>';
   return h + `<div class="acts"><button class="btn" data-ba="addq">Ajouter un devis</button><button class="btn" data-ba="addi">Ajouter une facture</button></div><p class="note">Le gérant accepte un devis d’un clic : la base enregistre la date et son adresse e-mail. Le gérant et la compta voient les factures et tes coordonnées de paiement ; l’équipe ne voit rien de financier.</p></div>`;
 }
