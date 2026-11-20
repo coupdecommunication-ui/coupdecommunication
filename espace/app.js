@@ -191,6 +191,7 @@ function mapReviews(rows) {
   Object.values(REV).forEach(a => a.sort((x, y) => Date.parse(x.created_at) - Date.parse(y.created_at)));
 }
 async function loadProject(id) {
+  MAILT = null;
   const {data, error} = await sb.from('projects').select('*').eq('id', id).maybeSingle();
   if (error || !data) return false;
   P = data; D = {...blank(), ...(data.data || {})};
@@ -1158,6 +1159,72 @@ function reminder() {
   return `Bonjour${first.name ? ' ' + first.name : ''},\n\n${w.length > 1 ? `${w.length} posts attendent` : 'Un post attend'} ${T('votre', 'ta')} validation dans ${T('votre', 'ton')} espace Coup de Com’ :\n${w.map(p => `· ${p.title || FORMATS[p.format] || 'Post'} (publication ${fwhen(p.publish_at)}), réponse avant le ${fwhen(deadline(p))}`).join('\n')}\n\n${PUBLIC_URL}\n\nSans réponse dans le délai, ${w.length > 1 ? 'ils seront validés' : 'il sera validé'} automatiquement pour que ${T('votre', 'ton')} compte reste actif.\n\nÀ très vite,\n${SIGN}`;
 }
 
+/* ---------- écrire au client : modèles de mails (Gmail du compte de l'agence ou messagerie de l'ordinateur) ---------- */
+let MAILT = null;
+const firstName = list => { const m = MEMBERS.find(x => list.includes(x.email) && x.name); return m ? ' ' + m.name : ''; };
+const openQuote = () => BILL.filter(b => b.kind === 'quote' && !b.accepted_at).slice(-1)[0];
+function mailTpls() {
+  const q = openQuote(), fb = q && (q.extra || {}).feedback, tr = q && (q.extra || {}).trial, waitP = POSTS.filter(p => pstat(p).k === 'wait');
+  const rep = (D.reports || []).filter(r => r.month).sort((a, b) => b.month.localeCompare(a.month))[0];
+  const inv = BILL.filter(b => b.kind === 'invoice' && b.status !== 'paid').slice(-1)[0];
+  const end = `\n\n${PUBLIC_URL}\n\n${T('Pour vous connecter, il suffit de taper votre adresse e-mail : vous recevez un lien, sans mot de passe.', 'Pour te connecter, il suffit de taper ton adresse e-mail : tu reçois un lien, sans mot de passe.')}\n\nÀ très vite,\n${SIGN}`;
+  const offer = tr ? '\n\n🎁 ' + (tr.kind === 'free' ? (+tr.months > 1 ? `Les ${+tr.months} premiers mois sont offerts` : 'Le premier mois est offert') : `Le premier mois est à ${eur(tr.price)} au lieu de ${eur(tr.monthly)}`) + T(' : vous pouvez tester sans risque', ' : tu peux tester sans risque') + (tr.fallback && tr.fallbackLabel ? T(`, et passer ensuite au ${tr.fallbackLabel} si ce n’est pas assez rentable pour vous.`, `, et passer ensuite au ${tr.fallbackLabel} si ce n’est pas assez rentable pour toi.`) : '.') : '';
+  const qInfo = q ? `\n\n· ${q.label || 'Devis'}${q.number ? ' (n° ' + q.number + ')' : ''}\n· Montant : ${eur(q.amount)}${(q.extra || {}).vat ? ' TTC' : ' HT'}${q.due ? `\n· Valable jusqu’au ${fd(q.due)}` : ''}` : '';
+  const qWhat = `\n\n${T('Dans votre espace, vous trouverez', 'Dans ton espace, tu trouveras')} le détail de chaque prestation, le devis complet en PDF et une comparaison de nos 3 packs. ${T('Si tout vous convient, vous pouvez l’accepter en un clic. Une question ou un doute ? Vous pouvez nous l’écrire directement depuis le devis.', 'Si tout te convient, tu peux l’accepter en un clic. Une question ou un doute ? Tu peux nous l’écrire directement depuis le devis.')}`;
+  return [
+    {k:'quote', l:'Devis en ligne', ok:!!q, to:['gerant', 'compta'],
+      s:() => T(`Votre devis Coup de Com’ est disponible`, `Ton devis Coup de Com’ est disponible`) + (q && q.number ? ` (n° ${q.number})` : ''),
+      b:to => `Bonjour${firstName(to)},\n\n${T('Merci encore pour notre échange ! Votre devis est maintenant en ligne dans votre espace client Coup de Com’ :', 'Merci encore pour notre échange ! Ton devis est maintenant en ligne dans ton espace client Coup de Com’ :')}${qInfo}${offer}${qWhat}${end}`},
+    {k:'quote2', l:'Devis ajusté', ok:!!(q && fb), to:['gerant', 'compta'],
+      s:() => T('Votre devis ajusté est en ligne', 'Ton devis ajusté est en ligne'),
+      b:to => `Bonjour${firstName(to)},\n\n${T('Merci pour votre retour', 'Merci pour ton retour')}${fb && fb.pack ? ` (${fb.pack})` : ''} ! ${T('Nous avons ajusté votre devis en tenant compte de vos remarques. Il est en ligne dans votre espace :', 'On a ajusté ton devis en tenant compte de tes remarques. Il est en ligne dans ton espace :')}${qInfo}${offer}${qWhat}${end}`},
+    {k:'brief', l:'Questionnaire à remplir', ok:!(BRIEF && BRIEF.submitted), to:['gerant', 'equipe'],
+      s:() => prospect() ? T('Votre questionnaire découverte Coup de Com’', 'Ton questionnaire découverte Coup de Com’') : T('Votre brief de démarrage Coup de Com’', 'Ton brief de démarrage Coup de Com’'),
+      b:to => `Bonjour${firstName(to)},\n\n${T('Pour vous préparer une proposition vraiment sur mesure, il nous manque quelques informations. Le questionnaire vous attend dans votre espace : une dizaine de minutes suffisent, et vous pouvez répondre par écrit ou par message vocal, et ajouter vos photos et logos.', 'Pour te préparer une proposition vraiment sur mesure, il nous manque quelques infos. Le questionnaire t’attend dans ton espace : une dizaine de minutes suffisent, et tu peux répondre par écrit ou par message vocal, et ajouter tes photos et logos.')}${end}`},
+    {k:'posts', l:'Posts à valider', ok:waitP.length > 0, to:['gerant', 'equipe'],
+      s:() => T('Des posts attendent votre validation', 'Des posts attendent ta validation') + ' · Coup de Com’', b:() => reminder()},
+    {k:'report', l:'Bilan du mois', ok:!!rep, to:['gerant', 'equipe'],
+      s:() => T(`Votre bilan de ${rep ? fmonth(rep.month) : 'mois'} est disponible`, `Ton bilan de ${rep ? fmonth(rep.month) : 'mois'} est disponible`),
+      b:to => `Bonjour${firstName(to)},\n\n${T(`Le bilan de ${rep ? fmonth(rep.month) : 'ce mois-ci'} est en ligne dans votre espace : vos chiffres, les posts qui ont le mieux marché et nos idées pour le mois prochain.`, `Le bilan de ${rep ? fmonth(rep.month) : 'ce mois-ci'} est en ligne dans ton espace : tes chiffres, les posts qui ont le mieux marché et nos idées pour le mois prochain.`)}${end}`},
+    {k:'invoice', l:'Facture', ok:!!inv, to:['gerant', 'compta'],
+      s:() => `Facture Coup de Com’${inv && inv.number ? ' n° ' + inv.number : ''}`,
+      b:to => `Bonjour${firstName(to)},\n\n${T('Votre facture est disponible dans votre espace client :', 'Ta facture est disponible dans ton espace client :')}${inv ? `\n\n· ${inv.label || 'Facture'}${inv.number ? ' (n° ' + inv.number + ')' : ''}\n· Montant : ${eur(inv.amount)}${inv.due ? `\n· À régler avant le ${fd(inv.due)}` : ''}` : ''}\n\n${T('Les coordonnées de paiement sont indiquées juste en dessous de la facture. Merci beaucoup !', 'Les coordonnées de paiement sont indiquées juste en dessous de la facture. Merci beaucoup !')}${end}`},
+    {k:'invite', l:'Invitation', ok:true, to:['gerant', 'equipe', 'compta'], s:() => inviteSubject(), b:to => invite(MEMBERS.find(m => to.includes(m.email)) || {name:'', email:to[0] || '', role:'gerant'})},
+    {k:'free', l:'Message libre', ok:true, to:['gerant'], s:() => T('Des nouvelles de votre projet', 'Des nouvelles de ton projet') + ' · Coup de Com’', b:to => `Bonjour${firstName(to)},\n\n\n\nÀ très vite,\n${SIGN}`}];
+}
+function mailSet(k) {
+  const tp = mailTpls(), t = tp.find(x => x.k === k && x.ok) || tp.find(x => x.ok);
+  const to = MEMBERS.filter(m => t.to.includes(m.role)).map(m => m.email);
+  MAILT = {k:t.k, to:to.length ? to : MEMBERS.slice(0, 1).map(m => m.email)};
+  MAILT.subj = t.s(); MAILT.body = t.b(MAILT.to);
+}
+function mailAdmin() {
+  if (!MEMBERS.length) return `<h2>Écrire au client</h2><div class="card"><p class="note" style="margin:0">Ajoute d’abord l’adresse de ton client dans « Accès client » : tu pourras ensuite lui envoyer l’invitation, le devis, les rappels…</p></div>`;
+  if (!MAILT || !mailTpls().find(x => x.k === MAILT.k && x.ok)) mailSet(openQuote() ? 'quote' : 'invite');
+  const tp = mailTpls().filter(x => x.ok);
+  return `<h2>Écrire au client</h2><div class="card mailc" id="mailA">
+    <div class="mtpl" role="group" aria-label="Type de message">${tp.map(t => `<button class="${t.k === MAILT.k ? 'on' : ''}" data-mt="${t.k}">${esc(t.l)}</button>`).join('')}</div>
+    <div class="mto"><span class="note">À :</span>${MEMBERS.map(m => `<label><input type="checkbox" data-mto="${esc(m.email)}" ${MAILT.to.includes(m.email) ? 'checked' : ''}> ${esc(m.name || m.email)} <small>${esc(ROLES[m.role] ? ROLES[m.role][0] : m.role)}</small></label>`).join('')}</div>
+    <label class="f">Objet<input class="in" id="mtS" value="${esc(MAILT.subj)}"></label>
+    <label class="f">Message<textarea class="in" id="mtB" rows="12">${esc(MAILT.body)}</textarea></label>
+    <div class="acts"><button class="btn primary" data-ms="gmail">Ouvrir dans Gmail</button><button class="btn" data-ms="mailto">Autre messagerie</button><button class="btn ghost" data-ms="copy">Copier le message</button></div>
+    <p class="note">Le message est déjà rempli avec les infos du projet (devis, montant, offre, lien de l’espace) et suit le ${D.tone === 'tu' ? 'tutoiement' : 'vouvoiement'} choisi pour ce client. Tu peux le retoucher ici. Rien ne part tant que tu n’as pas cliqué sur Envoyer dans Gmail.</p></div>`;
+}
+function mailClick(e) {
+  const b = e.target.closest('[data-mt],[data-mto],[data-ms],[data-mjump]'); if (!b) return false;
+  const box = $('#mailA');
+  if (b.dataset.mjump) { mailSet(b.dataset.mjump); const w = $('#mailWrap'); if (w) { w.innerHTML = mailAdmin(); w.scrollIntoView({block:'start', behavior:reduced() ? 'auto' : 'smooth'}); } return true; }
+  if (b.dataset.mt) { mailSet(b.dataset.mt); const w = $('#mailWrap'); if (w) w.innerHTML = mailAdmin(); return true; }
+  if (b.dataset.mto !== undefined) { const em = b.dataset.mto; MAILT.to = b.checked ? [...new Set([...MAILT.to, em])] : MAILT.to.filter(x => x !== em); return true; }
+  if (b.dataset.ms) {
+    const subj = ($('#mtS') || {}).value || '', body = ($('#mtB') || {}).value || '';
+    if (b.dataset.ms === 'copy') { copy(body, 'Message copié'); return true; }
+    if (!MAILT.to.length) { toast('Coche au moins un destinataire'); return true; }
+    sendMail(b.dataset.ms, MAILT.to, subj, body); return true;
+  }
+  return !!box;
+}
+
 function renderAdmin() {
   hdr();
   const a = app();
@@ -1167,8 +1234,8 @@ function renderAdmin() {
   if (prospect()) {
     const accepted = BILL.some(b => b.kind === 'quote' && b.accepted_at);
     h += `<div class="hint pro"><p style="margin:0 0 8px"><b>Prospect.</b> Il voit seulement son questionnaire de découverte${BILL.some(b => b.kind === 'quote') ? ' et tes devis' : ''}. ${accepted ? '<b>Un devis est accepté</b> : ' : 'Quand il signe : '}passe-le en client pour ouvrir tout son espace (posts, calendrier, rapports, factures). Ses réponses, ses fichiers et ses messages vocaux sont conservés.</p><button class="btn primary sm" id="signP">Passer en client signé</button></div>`;
-    h += accessAdmin() + projectAdmin() + briefAdmin() + billingAdmin();
-  } else h += accessAdmin() + projectAdmin() + postsAdmin() + reportsAdmin() + briefAdmin() + livrablesAdmin() + tasksAdmin() + billingAdmin();
+    h += accessAdmin() + `<div id="mailWrap">${mailAdmin()}</div>` + projectAdmin() + briefAdmin() + billingAdmin();
+  } else h += accessAdmin() + `<div id="mailWrap">${mailAdmin()}</div>` + projectAdmin() + postsAdmin() + reportsAdmin() + briefAdmin() + livrablesAdmin() + tasksAdmin() + billingAdmin();
   h += `<h2>Projet terminé ?</h2><div class="card"><p class="note" style="margin-top:0">Archiver cache le projet au client et le range dans tes archives. Tu peux le ressortir à tout moment.</p><div class="acts"><button class="btn sm" id="archP">${P.archived ? 'Désarchiver le projet' : 'Archiver le projet'}</button><button class="btn sm ghost" id="delP">Supprimer définitivement</button></div></div>`;
   a.innerHTML = h;
   a.onclick = adminClick; a.oninput = adminInput; a.onchange = adminChange;
@@ -1456,7 +1523,7 @@ function billingAdmin() {
     ${b.kind === 'invoice' ? `<label class="f">Échéance<input class="in" type="date" data-bf="due" value="${esc(b.due || '')}"></label><label class="f">Statut<select class="in" data-bf="status"><option value="due" ${b.status !== 'paid' ? 'selected' : ''}>À régler</option><option value="paid" ${b.status === 'paid' ? 'selected' : ''}>Payée</option></select></label>` : `<div class="f"><span>Acceptation</span>${b.accepted_at ? `<span class="pill ok">Accepté le ${fdt(b.accepted_at)}${b.accepted_by ? ' par ' + esc(b.accepted_by) : ''}</span>` : '<span class="pill wait">En attente du gérant</span>'}</div>`}
     <div class="f"><span>PDF</span><span class="acts" style="margin:0"><button class="btn sm" data-ba="up">${b.file ? 'Remplacer le PDF' : 'Importer le PDF'}</button>${b.file ? `<span class="note">${esc(b.fname || 'PDF importé')}</span>` : ''}</span></div></div>
     ${b.kind === 'quote' && (b.extra || {}).feedback ? `<div class="qnote fbk">💬 <b>Retour du client</b> (${esc(b.extra.feedback.by || '')}, ${fd(b.extra.feedback.at)}) : ${b.extra.feedback.pack ? 'préfère le <b>' + esc(b.extra.feedback.pack) + '</b>. ' : ''}${esc(b.extra.feedback.msg || '')}</div>` : ''}
-    <div class="acts">${b.kind === 'quote' ? `<button class="btn sm" data-qpdf="${esc(b.id)}">Devis détaillé (PDF)</button>` : ''}${b.kind === 'quote' && b.accepted_at ? '<button class="btn sm ghost" data-ba="unacc">Annuler l’acceptation</button>' : ''}<button class="btn sm ghost" data-ba="del">Supprimer</button></div></div>`).join('') || '<p class="empty">Aucun devis ni facture.</p>';
+    <div class="acts">${b.kind === 'quote' && !b.accepted_at && MEMBERS.length ? `<button class="btn sm primary" data-mjump="${(b.extra || {}).feedback ? 'quote2' : 'quote'}">Prévenir le client par e-mail</button>` : ''}${b.kind === 'invoice' && b.status !== 'paid' && MEMBERS.length ? '<button class="btn sm" data-mjump="invoice">Prévenir le client par e-mail</button>' : ''}${b.kind === 'quote' ? `<button class="btn sm" data-qpdf="${esc(b.id)}">Devis détaillé (PDF)</button>` : ''}${b.kind === 'quote' && b.accepted_at ? '<button class="btn sm ghost" data-ba="unacc">Annuler l’acceptation</button>' : ''}<button class="btn sm ghost" data-ba="del">Supprimer</button></div></div>`).join('') || '<p class="empty">Aucun devis ni facture.</p>';
   return h + `<div class="acts"><button class="btn" data-ba="addq">Ajouter un devis</button><button class="btn" data-ba="addi">Ajouter une facture</button></div><p class="note">Le gérant accepte un devis d’un clic : la base enregistre la date et son adresse e-mail. Le gérant et la compta voient les factures et tes coordonnées de paiement ; l’équipe ne voit rien de financier.</p></div>`;
 }
 function saveBill(b) { later('bill:' + b.id, async () => { const row = {}; BILLF.forEach(k => row[k] = b[k] === '' && ['issued', 'due'].includes(k) ? null : b[k]); row.amount = +b.amount || 0; const {error} = await sb.from('billing').update(row).eq('id', b.id); if (error) toast('Document non enregistré : vérifie ta connexion'); return !error; }); }
@@ -1511,6 +1578,7 @@ async function adminChange(e) {
   if (mr && t.dataset.mf === 'role') { const m = MEMBERS.find(x => x.email === mr.dataset.mem); m.role = t.value; const {error} = await sb.from('members').update({role:m.role}).eq('project_id', P.id).eq('email', m.email); toast(error ? 'Rôle non enregistré' : `${m.email} : ${ROLES[m.role][0]}`); }
 }
 async function adminClick(e) {
+  if (mailClick(e)) return;
   const b = e.target.closest('button'); if (!b) return;
   if (b.id === 'preview') { await flushAll(); mode = 'view'; DRAFT = {}; viewRole = 'gerant'; OPEN = lockOpen(); renderClient(); scrollTo(0, 0); return; }
   if (b.id === 'signP') { confirmBtn(b, async () => {
