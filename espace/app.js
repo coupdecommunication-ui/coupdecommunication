@@ -743,7 +743,7 @@ function billingClient(quotesOnly) {
   let h = `<h2>${quotesOnly ? 'Notre proposition' : 'Devis et factures'}</h2>`;
   if (!quotes.length && !inv.length) return h + '<p class="empty">Aucun document pour l’instant.</p>';
   const doc = b => fileUrl(b.file) ? `<a class="btn sm" href="${esc(fileUrl(b.file))}" target="_blank" rel="noopener">Voir le ${b.kind === 'quote' ? 'devis' : 'PDF'}</a>` : '';
-  if (quotes.length) h += `<div class="card"><h3 class="h3" style="margin-top:0">Devis</h3>${quotes.map(b => `<div class="inv"><div><b>${esc(b.label || 'Devis')}</b><small>${b.number ? 'N° ' + esc(b.number) + ' · ' : ''}${fd(b.issued)}</small></div><span class="amt">${eur(b.amount)}</span>${quoteLines(b)}<span class="pill ${b.accepted_at ? 'ok' : 'wait'}">${b.accepted_at ? 'Accepté le ' + fd(b.accepted_at) : 'À accepter'}</span><div class="acts">${doc(b)}${!b.accepted_at && can.accept() ? `<button class="btn sm primary" data-accept="${esc(b.id)}">J’accepte ce devis</button>` : ''}</div></div>`).join('')}${quotes.some(b => !b.accepted_at) && can.accept() ? `<p class="note">En cliquant sur « J’accepte ce devis », ${T('vous donnez votre accord', 'tu donnes ton accord')} pour démarrer la mission aux conditions du devis. La date et ${T('votre', 'ton')} adresse e-mail sont enregistrées.</p>` : ''}</div>`;
+  if (quotes.length) h += `<div class="card"><h3 class="h3" style="margin-top:0">Devis</h3>${quotes.map(b => `<div class="inv"><div><b>${esc(b.label || 'Devis')}</b><small>${b.number ? 'N° ' + esc(b.number) + ' · ' : ''}${fd(b.issued)}</small></div><span class="amt">${eur(b.amount)}</span>${quoteLines(b)}<span class="pill ${b.accepted_at ? 'ok' : 'wait'}">${b.accepted_at ? 'Accepté le ' + fd(b.accepted_at) : 'À accepter'}</span><div class="acts"><button class="btn sm" data-qpdf="${esc(b.id)}">Devis détaillé (PDF)</button>${doc(b)}${!b.accepted_at && can.accept() ? `<button class="btn sm primary" data-accept="${esc(b.id)}">J’accepte ce devis</button>` : ''}</div></div>`).join('')}${quotes.some(b => !b.accepted_at) && can.accept() ? `<p class="note">En cliquant sur « J’accepte ce devis », ${T('vous donnez votre accord', 'tu donnes ton accord')} pour démarrer la mission aux conditions du devis. La date et ${T('votre', 'ton')} adresse e-mail sont enregistrées.</p>` : ''}</div>`;
   const openQ = quotes.filter(b => !b.accepted_at); if (openQ.length) h += packsCompare(openQ[openQ.length - 1]);
   if (inv.length) {
     const rest = inv.filter(b => b.status !== 'paid').reduce((s, b) => s + (+b.amount || 0), 0);
@@ -769,6 +769,70 @@ function packsCompare(b) {
     ${mine ? `<div class="acts"><button class="btn sm ghost" data-pk="" data-pb="${esc(b.id)}">${T('J’ai une question ou un doute sur le devis', 'J’ai une question ou un doute sur le devis')}</button></div><div id="pkForm"></div>` : ''}
     ${isAdmin ? '<p class="note">Aperçu : ton client peut indiquer le pack qu’il préfère ou poser une question ; tu le verras sur le devis dans la gestion.</p>' : ''}</details>`;
 }
+/* ---------- devis détaillé en PDF (mise en page A4, imprimée ou enregistrée en PDF par le navigateur) ---------- */
+const LEGAL = {name:'Coup de Com’', owner:'Sarath Adamou', status:'Entrepreneure individuelle (EI) · micro-entreprise', addr:'58 rue du Général de Larmina, 85000 La Roche-sur-Yon', siret:'935 072 041 00012', tel:'07 51 37 71 14', site:'coupdecommunication.com'};
+const UNIT_INFO = [[/audit/i, ['Votre Instagram et votre fiche Google passés en revue', '45 minutes en visio ou sur place', '5 recommandations concrètes', 'Le document sous 5 jours', 'Montant déduit si vous prenez un pack dans le mois']]];
+function lineInfo(l) { const pk = PACKS.find(p => new RegExp('\\b' + p.k + '\\b', 'i').test(l.label || '')); if (pk) return pk.f; const u = UNIT_INFO.find(([re]) => re.test(l.label || '')); return u ? u[1] : []; }
+function quoteDoc(b) {
+  const L = (b.lines || []).filter(l => l && l.label), x = b.extra || {}, tr = x.trial, abs = u => new URL(u, location.href).href;
+  const m = L.filter(l => l.type === 'mois').reduce((s, l) => s + (+l.price || 0) * (+l.qty || 1), 0), months = m ? Math.max(1, +x.months || 1) : 0;
+  const u = L.filter(l => l.type !== 'mois').reduce((s, l) => s + (+l.price || 0) * (+l.qty || 1), 0), sub = m * months + u, gift = tr ? (+tr.value || 0) : 0;
+  const disc = (sub - gift) * (Math.min(100, +x.discount || 0)) / 100, ht = Math.round((sub - gift - disc) * 100) / 100, tva = x.vat ? Math.round(ht * 20) / 100 : 0;
+  const ger = MEMBERS.find(mm => mm.role === 'gerant') || {}, vous = (D.tone || 'vous') !== 'tu', V = (a, c) => vous ? a : c;
+  const row = l => { const info = lineInfo(l), mo = l.type === 'mois', tot = (+l.price || 0) * (+l.qty || 1) * (mo ? months : 1);
+    return `<tr><td><b>${esc(l.label)}</b>${info.length ? `<ul>${info.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}</td><td class="c">${+l.qty || 1}</td><td class="r">${eur(l.price)}${mo ? '<small> / mois</small>' : ''}</td><td class="r">${eur(tot)}${mo ? `<small>${months} mois</small>` : ''}</td></tr>`; };
+  const hasPack = L.some(l => l.type === 'mois');
+  const steps = [V('Un échange pour bien comprendre votre lieu, vos objectifs et votre public.', 'Un échange pour bien comprendre ton lieu, tes objectifs et ton public.'),
+    hasPack ? V('La stratégie et le calendrier des publications, préparés pour vous.', 'La stratégie et le calendrier des publications, préparés pour toi.') : V('La création, à vos couleurs.', 'La création, à tes couleurs.'),
+    `${V('Vous validez tout dans votre espace client', 'Tu valides tout dans ton espace client')} (coupdecommunication.com/espace)${+D.rounds ? ` : ${+D.rounds} retouche${+D.rounds > 1 ? 's' : ''} incluse${+D.rounds > 1 ? 's' : ''}` : ''}${+D.reviewHours ? `, réponse sous ${+D.reviewHours} h` : ''}.`];
+  if (hasPack) steps.push(V('Chaque mois, un bilan chiffré pour voir ce qui marche.', 'Chaque mois, un bilan chiffré pour voir ce qui marche.'));
+  const offer = tr ? (tr.kind === 'free' ? (+tr.months > 1 ? `Les ${+tr.months} premiers mois sont offerts` : 'Le premier mois est offert') : `Le${+tr.months > 1 ? 's ' + (+tr.months) + ' premiers mois sont' : ' premier mois est'} à ${eur(tr.price)} au lieu de ${eur(tr.monthly)}`) + (tr.fallback && tr.fallbackLabel ? V(`. Ensuite, si ce n’est pas assez rentable pour vous, vous pourrez passer au ${tr.fallbackLabel} (${eur(tr.fallbackPrice)} / mois).`, `. Ensuite, si ce n’est pas assez rentable pour toi, tu pourras passer au ${tr.fallbackLabel} (${eur(tr.fallbackPrice)} / mois).`) : '.') : '';
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Devis ${esc(b.number || '')} · ${esc(D.client || '')} · Coup de Com’</title>
+<style>@font-face{font-family:F;src:url(${abs('/fonts/fraunces.woff2')}) format("woff2");font-weight:100 900}@font-face{font-family:O;src:url(${abs('/fonts/outfit.woff2')}) format("woff2");font-weight:100 900}
+@page{size:A4;margin:14mm 14mm 16mm}*{box-sizing:border-box}body{margin:0;background:#E9E2D6;color:#2F4A3A;font:400 10.5pt/1.5 O,system-ui,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.bar{position:sticky;top:0;display:flex;gap:10px;justify-content:center;padding:12px;background:#2F4A3A}.bar button{font:600 15px O,sans-serif;border:0;border-radius:999px;padding:11px 20px;cursor:pointer;background:#FFDAB9;color:#2F4A3A}.bar button+button{background:transparent;color:#FBF6EF;border:1px solid rgba(255,255,255,.35)}
+.page{width:210mm;min-height:297mm;margin:20px auto;background:#FBF6EF;padding:16mm 15mm;box-shadow:0 20px 50px -20px rgba(0,0,0,.35)}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding-bottom:12px;border-bottom:2px solid #8DA285}header svg{height:15mm;width:auto;color:#2F4A3A}
+.doc{text-align:right}.doc h1{font:600 26pt/1 F,Georgia,serif;margin:0;letter-spacing:.02em}.doc p{margin:4px 0 0;color:#5E7457}
+.parties{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}.parties>div{background:#fff;border:1px solid #E6DCCD;border-radius:10px;padding:10px 12px}.parties small{display:block;text-transform:uppercase;letter-spacing:.14em;font-size:7.5pt;color:#A85A3C;font-weight:600;margin-bottom:3px}.parties p{margin:0}
+h2{font:600 15pt/1.2 F,Georgia,serif;margin:16px 0 6px}.obj{font:500 13pt/1.3 F,Georgia,serif;margin:6px 0 10px}
+.offer{display:flex;gap:10px;align-items:flex-start;background:#FFE9D6;border:1px dashed #A85A3C;border-radius:10px;padding:9px 12px;margin:8px 0 12px}
+table{width:100%;border-collapse:collapse}th{text-align:left;font-size:8pt;text-transform:uppercase;letter-spacing:.1em;color:#5E7457;border-bottom:1.5px solid #2F4A3A;padding:6px 6px}td{padding:9px 6px;border-bottom:1px solid #E6DCCD;vertical-align:top}
+td ul{margin:4px 0 0;padding-left:15px;color:#5E7457;font-size:9.3pt}td small{display:block;color:#5E7457;font-size:8.5pt}.c{text-align:center;width:9%}.r{text-align:right;white-space:nowrap;width:17%}tr.gift td{color:#A85A3C;font-weight:600}tr{page-break-inside:avoid}
+.tot{margin:10px 0 0 auto;width:62%;border-collapse:collapse}.tot td{border:0;padding:4px 6px}.tot .big td{font:600 14pt F,Georgia,serif;border-top:1.5px solid #2F4A3A;padding-top:8px}.tot .note td{font-size:8.5pt;color:#5E7457}
+.cols{display:grid;grid-template-columns:1.2fr 1fr;gap:16px;margin-top:6px;page-break-inside:avoid}ol{margin:4px 0 0;padding-left:18px}ol li{margin-bottom:3px}
+.cond{font-size:9.3pt}.cond p{margin:0 0 5px}.msg{background:#fff;border-left:3px solid #8DA285;border-radius:6px;padding:8px 12px;white-space:pre-line;margin:6px 0}
+.sign{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:16px;page-break-inside:avoid}.sign>div{border:1px solid #E6DCCD;border-radius:10px;padding:10px 12px;min-height:30mm;background:#fff}.sign small{color:#5E7457}.ok{color:#3E8E5A;font-weight:600}
+footer{margin-top:18px;padding-top:8px;border-top:1px solid #E6DCCD;font-size:7.8pt;color:#5E7457;text-align:center}
+@media print{body{background:#FBF6EF}.bar{display:none}.page{margin:0;width:auto;min-height:0;padding:0;box-shadow:none;background:none}}
+@media screen and (max-width:820px){.page{width:auto;margin:10px;padding:18px}.parties,.cols,.sign{grid-template-columns:1fr}.tot{width:100%}}</style></head><body>
+<div class="bar"><button onclick="print()">Télécharger en PDF</button><button onclick="close()">Fermer</button></div>
+<div class="page">
+<header><svg viewBox="0 0 5401.2 1423.0" role="img" aria-label="Coup de Com’"><use href="${abs('logo.svg')}#logoH"/></svg><div class="doc"><h1>DEVIS</h1><p>N° ${esc(b.number || '—')} · le ${fd(b.issued || today())}</p>${b.due ? `<p>Valable jusqu’au ${fd(b.due)}</p>` : ''}</div></header>
+<div class="parties"><div><small>De</small><p><b>${LEGAL.name}</b><br>${LEGAL.owner}, ${LEGAL.status}<br>${LEGAL.addr}<br>SIRET ${LEGAL.siret}<br>${esc(AGENCY_MAIL)} · ${LEGAL.tel}</p></div>
+<div><small>Pour</small><p><b>${esc(D.client || '')}</b>${ger.name ? '<br>' + esc(ger.name) : ''}${ger.email ? '<br>' + esc(ger.email) : ''}${D.project ? `<br><span style="color:#5E7457">Projet : ${esc(D.project)}</span>` : ''}</p></div></div>
+<p class="obj">Objet : ${esc(b.label || 'Proposition Coup de Com’')}</p>
+${offer ? `<div class="offer"><span>🎁</span><span>${esc(offer)}</span></div>` : ''}
+<table><thead><tr><th>Prestation et ce qui est compris</th><th class="c">Qté</th><th class="r">Prix</th><th class="r">Total</th></tr></thead><tbody>${L.map(row).join('')}
+${gift ? `<tr class="gift"><td>🎁 ${tr.kind === 'free' ? (+tr.months > 1 ? `${+tr.months} mois offerts` : 'Premier mois offert') : 'Réduction de démarrage'}</td><td></td><td></td><td class="r">− ${eur(gift)}</td></tr>` : ''}
+${disc ? `<tr class="gift"><td>Remise (${+x.discount} %)</td><td></td><td></td><td class="r">− ${eur(disc)}</td></tr>` : ''}</tbody></table>
+<table class="tot">${m ? `<tr><td>Abonnement mensuel</td><td class="r">${eur(m)} × ${months} mois</td></tr>` : ''}${u ? `<tr><td>Prestations ponctuelles</td><td class="r">${eur(u)}</td></tr>` : ''}
+<tr><td>Total HT</td><td class="r">${eur(ht)}</td></tr>${x.vat ? `<tr><td>TVA 20 %</td><td class="r">${eur(tva)}</td></tr>` : ''}
+<tr class="big"><td>Total ${x.vat ? 'TTC' : 'à régler'}</td><td class="r">${eur(x.vat ? ht + tva : ht)}</td></tr>${x.vat ? '' : '<tr class="note"><td colspan="2">TVA non applicable, article 293 B du CGI</td></tr>'}</table>
+<div class="cols"><div><h2>Comment ça se passe</h2><ol>${steps.map(st => `<li>${esc(st)}</li>`).join('')}</ol></div>
+<div class="cond"><h2>Conditions</h2>${b.due ? `<p>Devis valable jusqu’au ${fd(b.due)}.</p>` : ''}${months ? `<p>Abonnement sur ${months} mois.</p>` : ''}${(AGENCY || {}).iban ? '<p>Règlement par virement bancaire (coordonnées dans votre espace client et sur la facture).</p>' : ''}<p>${V('Une question ? Écrivez-nous', 'Une question ? Écris-nous')} : ${esc(AGENCY_MAIL)}.</p></div></div>
+${x.notes ? `<h2>Le mot de l’agence</h2><div class="msg">${esc(x.notes)}</div>` : ''}
+<div class="sign"><div><small>Pour Coup de Com’</small><p><b>${LEGAL.owner}</b><br>Fondatrice</p></div><div><small>Bon pour accord du client</small>${b.accepted_at ? `<p class="ok">✓ Accepté en ligne le ${fd(b.accepted_at)}${b.accepted_by ? '<br>par ' + esc(b.accepted_by) : ''}</p>` : `<p>Date et signature :</p><p><small>${V('Ou acceptez en un clic dans votre espace client.', 'Ou accepte en un clic dans ton espace client.')}</small></p>`}</div></div>
+<footer>${LEGAL.name} · ${LEGAL.owner}, ${LEGAL.status} · ${LEGAL.addr} · SIRET ${LEGAL.siret} · ${esc(AGENCY_MAIL)} · ${LEGAL.tel} · ${LEGAL.site}</footer>
+</div><script>document.fonts.ready.then(()=>setTimeout(()=>print(),300))<\/script></body></html>`;
+}
+function openQuoteDoc(id) {
+  const b = BILL.find(x => x.id === id); if (!b) return;
+  const w = window.open('', '_blank'); if (!w) { toast('Autorisez les fenêtres pour ce site, puis réessayez'); return; }
+  w.document.open(); w.document.write(quoteDoc(b)); w.document.close();
+}
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-qpdf]'); if (b) { e.preventDefault(); e.stopPropagation(); openQuoteDoc(b.dataset.qpdf); } }, true);
+
 function trialOffer(tr) {
   if (!tr || !tr.kind) return '';
   const n = +tr.months || 1;
@@ -1392,7 +1456,7 @@ function billingAdmin() {
     ${b.kind === 'invoice' ? `<label class="f">Échéance<input class="in" type="date" data-bf="due" value="${esc(b.due || '')}"></label><label class="f">Statut<select class="in" data-bf="status"><option value="due" ${b.status !== 'paid' ? 'selected' : ''}>À régler</option><option value="paid" ${b.status === 'paid' ? 'selected' : ''}>Payée</option></select></label>` : `<div class="f"><span>Acceptation</span>${b.accepted_at ? `<span class="pill ok">Accepté le ${fdt(b.accepted_at)}${b.accepted_by ? ' par ' + esc(b.accepted_by) : ''}</span>` : '<span class="pill wait">En attente du gérant</span>'}</div>`}
     <div class="f"><span>PDF</span><span class="acts" style="margin:0"><button class="btn sm" data-ba="up">${b.file ? 'Remplacer le PDF' : 'Importer le PDF'}</button>${b.file ? `<span class="note">${esc(b.fname || 'PDF importé')}</span>` : ''}</span></div></div>
     ${b.kind === 'quote' && (b.extra || {}).feedback ? `<div class="qnote fbk">💬 <b>Retour du client</b> (${esc(b.extra.feedback.by || '')}, ${fd(b.extra.feedback.at)}) : ${b.extra.feedback.pack ? 'préfère le <b>' + esc(b.extra.feedback.pack) + '</b>. ' : ''}${esc(b.extra.feedback.msg || '')}</div>` : ''}
-    <div class="acts">${b.kind === 'quote' && b.accepted_at ? '<button class="btn sm ghost" data-ba="unacc">Annuler l’acceptation</button>' : ''}<button class="btn sm ghost" data-ba="del">Supprimer</button></div></div>`).join('') || '<p class="empty">Aucun devis ni facture.</p>';
+    <div class="acts">${b.kind === 'quote' ? `<button class="btn sm" data-qpdf="${esc(b.id)}">Devis détaillé (PDF)</button>` : ''}${b.kind === 'quote' && b.accepted_at ? '<button class="btn sm ghost" data-ba="unacc">Annuler l’acceptation</button>' : ''}<button class="btn sm ghost" data-ba="del">Supprimer</button></div></div>`).join('') || '<p class="empty">Aucun devis ni facture.</p>';
   return h + `<div class="acts"><button class="btn" data-ba="addq">Ajouter un devis</button><button class="btn" data-ba="addi">Ajouter une facture</button></div><p class="note">Le gérant accepte un devis d’un clic : la base enregistre la date et son adresse e-mail. Le gérant et la compta voient les factures et tes coordonnées de paiement ; l’équipe ne voit rien de financier.</p></div>`;
 }
 function saveBill(b) { later('bill:' + b.id, async () => { const row = {}; BILLF.forEach(k => row[k] = b[k] === '' && ['issued', 'due'].includes(k) ? null : b[k]); row.amount = +b.amount || 0; const {error} = await sb.from('billing').update(row).eq('id', b.id); if (error) toast('Document non enregistré : vérifie ta connexion'); return !error; }); }
