@@ -1159,6 +1159,41 @@ function reminder() {
   return `Bonjour${first.name ? ' ' + first.name : ''},\n\n${w.length > 1 ? `${w.length} posts attendent` : 'Un post attend'} ${T('votre', 'ta')} validation dans ${T('votre', 'ton')} espace Coup de Com’ :\n${w.map(p => `· ${p.title || FORMATS[p.format] || 'Post'} (publication ${fwhen(p.publish_at)}), réponse avant le ${fwhen(deadline(p))}`).join('\n')}\n\n${PUBLIC_URL}\n\nSans réponse dans le délai, ${w.length > 1 ? 'ils seront validés' : 'il sera validé'} automatiquement pour que ${T('votre', 'ton')} compte reste actif.\n\nÀ très vite,\n${SIGN}`;
 }
 
+/* ---------- mail mis en page (HTML collé dans Gmail) ---------- */
+function mailHtml(subject, body) {
+  const X = t => esc(t).replace(/(https?:\/\/[^\s<]+)/g, u => `<a href="${u}" style="color:#A85A3C;font-weight:600">${u.replace(/^https?:\/\//, '')}</a>`);
+  const P = 'margin:0 0 16px;font-size:16px;line-height:1.6;color:#2F4A3A';
+  const url = PUBLIC_URL.replace(/\/$/, '/');
+  const blocks = String(body || '').replace(/\r/g, '').split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
+  let out = '', i = 0;
+  const sigAt = blocks.findIndex(b => /^À très vite,/.test(b));
+  blocks.forEach((b, idx) => {
+    const lines = b.split('\n');
+    if (idx === sigAt) { out += `<p style="${P}">À très vite,<br><strong style="font-family:Georgia,'Times New Roman',serif;font-size:18px">${X(lines.slice(1).join(' ') || SIGN)}</strong></p>`; return; }
+    if (b === PUBLIC_URL || b === url || b === PUBLIC_URL.replace(/\/$/, '')) {
+      out += `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:6px 0 22px"><tr><td bgcolor="#A85A3C" style="background:#A85A3C;border-radius:999px"><a href="${esc(PUBLIC_URL)}" style="display:inline-block;padding:14px 28px;color:#FFFFFF;font-weight:700;font-size:16px;text-decoration:none;font-family:Arial,Helvetica,sans-serif">Ouvrir mon espace client →</a></td></tr></table>`; return; }
+    if (lines.every(l => /^·\s/.test(l)) ) {
+      out += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px"><tr><td bgcolor="#F4ECE0" style="background:#F4ECE0;border-left:4px solid #8DA285;border-radius:10px;padding:14px 18px;font-size:16px;line-height:1.7;color:#2F4A3A">${lines.map((l, k) => k === 0 ? `<strong>${X(l.replace(/^·\s*/, ''))}</strong>` : X(l.replace(/^·\s*/, ''))).join('<br>')}</td></tr></table>`; return; }
+    if (/^🎁/.test(b)) {
+      out += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px"><tr><td bgcolor="#FFDAB9" style="background:#FFDAB9;border-radius:10px;padding:14px 18px;font-size:16px;line-height:1.6;color:#6B3A18">${X(b)}</td></tr></table>`; return; }
+    out += `<p style="${P}">${lines.map(X).join('<br>')}</p>`;
+  });
+  return `<div style="background:#FBF6EF;padding:24px 12px;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#FFFFFF;border-radius:16px;border:1px solid #E6DCCD"><tr><td bgcolor="#2F4A3A" style="background:#2F4A3A;padding:20px 28px;border-radius:16px 16px 0 0"><span style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#FFDAB9">Coup de Com’</span><br><span style="font-size:13px;color:#E4ECDF;letter-spacing:.03em">La com’ qui crée du lien</span></td></tr><tr><td style="padding:28px 28px 8px">${out}</td></tr><tr><td style="padding:14px 28px 22px;border-top:1px solid #E6DCCD;font-size:12px;line-height:1.5;color:#5E7457">Coup de Com’ · Sarath Adamou, entrepreneure individuelle · La Roche-sur-Yon<br><a href="https://coupdecommunication.com" style="color:#5E7457">coupdecommunication.com</a></td></tr></table></div>`;
+}
+async function copyRich(html, plain, ok) {
+  try {
+    await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html], {type:'text/html'}), 'text/plain':new Blob([plain], {type:'text/plain'})})]);
+    toast(ok); return true;
+  } catch {
+    const d = document.createElement('div'); d.innerHTML = html; d.style.cssText = 'position:fixed;left:-9999px;top:0'; document.body.appendChild(d);
+    const r = document.createRange(); r.selectNodeContents(d); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    let done = false; try { done = document.execCommand('copy'); } catch {}
+    sel.removeAllRanges(); d.remove();
+    if (done) toast(ok); else toast('Copie impossible ici : utilise « Voir l’aperçu » puis sélectionne et copie le mail à la main');
+    return done;
+  }
+}
+
 /* ---------- écrire au client : modèles de mails (Gmail du compte de l'agence ou messagerie de l'ordinateur) ---------- */
 let MAILT = null;
 const firstName = list => { const m = MEMBERS.find(x => list.includes(x.email) && x.name); return m ? ' ' + m.name : ''; };
@@ -1207,8 +1242,10 @@ function mailAdmin() {
     <div class="mto"><span class="note">À :</span>${MEMBERS.map(m => `<label><input type="checkbox" data-mto="${esc(m.email)}" ${MAILT.to.includes(m.email) ? 'checked' : ''}> ${esc(m.name || m.email)} <small>${esc(ROLES[m.role] ? ROLES[m.role][0] : m.role)}</small></label>`).join('')}</div>
     <label class="f">Objet<input class="in" id="mtS" value="${esc(MAILT.subj)}"></label>
     <label class="f">Message<textarea class="in" id="mtB" rows="12">${esc(MAILT.body)}</textarea></label>
-    <div class="acts"><button class="btn primary" data-ms="gmail">Ouvrir dans Gmail</button><button class="btn" data-ms="mailto">Autre messagerie</button><button class="btn ghost" data-ms="copy">Copier le message</button></div>
-    <p class="note">Le message est déjà rempli avec les infos du projet (devis, montant, offre, lien de l’espace) et suit le ${D.tone === 'tu' ? 'tutoiement' : 'vouvoiement'} choisi pour ce client. Tu peux le retoucher ici. Rien ne part tant que tu n’as pas cliqué sur Envoyer dans Gmail.</p></div>`;
+    <div class="acts"><button class="btn primary" data-ms="rich">✨ Mail mis en page : copier et ouvrir Gmail</button><button class="btn" data-ms="prev">Voir l’aperçu</button></div>
+    <div class="acts"><button class="btn sm" data-ms="gmail">Gmail, texte simple</button><button class="btn sm" data-ms="mailto">Autre messagerie</button><button class="btn sm ghost" data-ms="copy">Copier le texte</button></div>
+    <div id="mailPrev" class="mprev" hidden></div>
+    <p class="note">Le message est déjà rempli avec les infos du projet (devis, montant, offre, lien de l’espace) et suit le ${D.tone === 'tu' ? 'tutoiement' : 'vouvoiement'} choisi pour ce client. Tu peux le retoucher ici. Pour le mail mis en page : clique sur le bouton, Gmail s’ouvre avec le destinataire et l’objet, puis colle le mail dans le message (⌘V sur Mac, Ctrl+V sinon). Rien ne part tant que tu n’as pas cliqué sur Envoyer dans Gmail.</p></div>`;
 }
 function mailClick(e) {
   const b = e.target.closest('[data-mt],[data-mto],[data-ms],[data-mjump]'); if (!b) return false;
@@ -1219,6 +1256,16 @@ function mailClick(e) {
   if (b.dataset.ms) {
     const subj = ($('#mtS') || {}).value || '', body = ($('#mtB') || {}).value || '';
     if (b.dataset.ms === 'copy') { copy(body, 'Message copié'); return true; }
+    if (b.dataset.ms === 'prev') { const pv = $('#mailPrev'); if (pv) { pv.hidden = !pv.hidden; pv.innerHTML = mailHtml(subj, body); } return true; }
+    if (b.dataset.ms === 'rich') {
+      if (!MAILT.to.length) { toast('Coche au moins un destinataire'); return true; }
+      copyRich(mailHtml(subj, body), body, 'Mail mis en page copié').then(okc => {
+        const e = encodeURIComponent, list = MAILT.to.filter(Boolean).join(',');
+        const w = window.open(`https://mail.google.com/mail/?${AGENCY_MAIL ? 'authuser=' + e(AGENCY_MAIL) + '&' : ''}view=cm&fs=1&to=${e(list)}&su=${e(subj)}`, '_blank', 'noopener');
+        toast(w === null ? 'Fenêtre Gmail bloquée : autorise les fenêtres pour ce site' : okc ? 'Mail copié. Dans Gmail, clique dans le message et colle : ⌘V (Mac) ou Ctrl+V' : 'Gmail s’ouvre : copie le mail depuis « Voir l’aperçu » puis colle-le');
+      });
+      return true;
+    }
     if (!MAILT.to.length) { toast('Coche au moins un destinataire'); return true; }
     sendMail(b.dataset.ms, MAILT.to, subj, body); return true;
   }
