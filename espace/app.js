@@ -1174,6 +1174,8 @@ function mailHtml(subject, body) {
       out += `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:6px 0 22px"><tr><td bgcolor="#A85A3C" style="background:#A85A3C;border-radius:999px"><a href="${esc(PUBLIC_URL)}" style="display:inline-block;padding:14px 28px;color:#FFFFFF;font-weight:700;font-size:16px;text-decoration:none;font-family:Arial,Helvetica,sans-serif">Ouvrir mon espace client →</a></td></tr></table>`; return; }
     if (lines.every(l => /^·\s/.test(l)) ) {
       out += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px"><tr><td bgcolor="#F4ECE0" style="background:#F4ECE0;border-left:4px solid #8DA285;border-radius:10px;padding:14px 18px;font-size:16px;line-height:1.7;color:#2F4A3A">${lines.map((l, k) => k === 0 ? `<strong>${X(l.replace(/^·\s*/, ''))}</strong>` : X(l.replace(/^·\s*/, ''))).join('<br>')}</td></tr></table>`; return; }
+    if (/^📎/.test(b)) {
+      out += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px"><tr><td bgcolor="#E4ECDF" style="background:#E4ECDF;border-radius:10px;padding:14px 18px;font-size:16px;line-height:1.6;color:#2F4A3A"><strong>${X(b)}</strong></td></tr></table>`; return; }
     if (/^🎁/.test(b)) {
       out += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px"><tr><td bgcolor="#FFDAB9" style="background:#FFDAB9;border-radius:10px;padding:14px 18px;font-size:16px;line-height:1.6;color:#6B3A18">${X(b)}</td></tr></table>`; return; }
     out += `<p style="${P}">${lines.map(X).join('<br>')}</p>`;
@@ -1195,7 +1197,9 @@ async function copyRich(html, plain, ok) {
 }
 
 /* ---------- écrire au client : modèles de mails (Gmail du compte de l'agence ou messagerie de l'ordinateur) ---------- */
-let MAILT = null;
+let MAILT = null, DOCNAME = 'audit de communication';
+const DOCN = () => DOCNAME.trim() || 'dossier';
+const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
 const firstName = list => { const m = MEMBERS.find(x => list.includes(x.email) && x.name); return m ? ' ' + m.name : ''; };
 const openQuote = () => BILL.filter(b => b.kind === 'quote' && !b.accepted_at).slice(-1)[0];
 function mailTpls() {
@@ -1224,6 +1228,9 @@ function mailTpls() {
     {k:'invoice', l:'Facture', ok:!!inv, to:['gerant', 'compta'],
       s:() => `Facture Coup de Com’${inv && inv.number ? ' n° ' + inv.number : ''}`,
       b:to => `Bonjour${firstName(to)},\n\n${T('Votre facture est disponible dans votre espace client :', 'Ta facture est disponible dans ton espace client :')}${inv ? `\n\n· ${inv.label || 'Facture'}${inv.number ? ' (n° ' + inv.number + ')' : ''}\n· Montant : ${eur(inv.amount)}${inv.due ? `\n· À régler avant le ${fd(inv.due)}` : ''}` : ''}\n\n${T('Les coordonnées de paiement sont indiquées juste en dessous de la facture. Merci beaucoup !', 'Les coordonnées de paiement sont indiquées juste en dessous de la facture. Merci beaucoup !')}${end}`},
+    {k:'doc', l:'Envoyer un dossier', ok:true, to:['gerant', 'equipe'],
+      s:() => `${cap(DOCN())} : ${T('votre dossier est prêt', 'ton dossier est prêt')}`,
+      b:to => `Bonjour${firstName(to)},\n\n${T('Comme convenu, voici votre', 'Comme convenu, voici ton')} ${DOCN()}. ${T('Nous y avons rassemblé ce que nous avons observé, ce qui fonctionne déjà et nos pistes pour aller plus loin.', 'On y a rassemblé ce qu’on a observé, ce qui fonctionne déjà et nos pistes pour aller plus loin.')}\n\n📎 ${T('Le dossier est en pièce jointe de ce mail (PDF).', 'Le dossier est en pièce jointe de ce mail (PDF).')}\n\n${T('Prenez le temps de le parcourir tranquillement. Quand vous voulez, on en parle ensemble et on choisit les pistes qui vous parlent le plus. Il vous suffit de nous répondre ici, ou de nous écrire depuis votre espace :', 'Prends le temps de le parcourir tranquillement. Quand tu veux, on en parle ensemble et on choisit les pistes qui te parlent le plus. Il te suffit de nous répondre ici, ou de nous écrire depuis ton espace :')}${end}`},
     {k:'invite', l:'Invitation', ok:true, to:['gerant', 'equipe', 'compta'], s:() => inviteSubject(), b:to => invite(MEMBERS.find(m => to.includes(m.email)) || {name:'', email:to[0] || '', role:'gerant'})},
     {k:'free', l:'Message libre', ok:true, to:['gerant'], s:() => T('Des nouvelles de votre projet', 'Des nouvelles de ton projet') + ' · Coup de Com’', b:to => `Bonjour${firstName(to)},\n\n\n\nÀ très vite,\n${SIGN}`}];
 }
@@ -1240,6 +1247,7 @@ function mailAdmin() {
   return `<h2>Écrire au client</h2><div class="card mailc" id="mailA">
     <div class="mtpl" role="group" aria-label="Type de message">${tp.map(t => `<button class="${t.k === MAILT.k ? 'on' : ''}" data-mt="${t.k}">${esc(t.l)}</button>`).join('')}</div>
     <div class="mto"><span class="note">À :</span>${MEMBERS.map(m => `<label><input type="checkbox" data-mto="${esc(m.email)}" ${MAILT.to.includes(m.email) ? 'checked' : ''}> ${esc(m.name || m.email)} <small>${esc(ROLES[m.role] ? ROLES[m.role][0] : m.role)}</small></label>`).join('')}</div>
+ ${MAILT.k === 'doc' ? `<label class="f">Nom du document<input class="in" id="mtD" data-mdoc value="${esc(DOCNAME)}" placeholder="audit de communication"><span class="note">Exemples : audit de communication, plan de contenus, charte graphique. Le mail se met à jour quand tu sors du champ.</span></label><p class="mattach">📎 N’oublie pas : une fois Gmail ouvert, clique sur le trombone pour joindre le PDF avant d’envoyer.</p>` : ''}
     <label class="f">Objet<input class="in" id="mtS" value="${esc(MAILT.subj)}"></label>
     <label class="f">Message<textarea class="in" id="mtB" rows="12">${esc(MAILT.body)}</textarea></label>
     <div class="acts"><button class="btn primary" data-ms="rich">✨ Mail mis en page : copier et ouvrir Gmail</button><button class="btn" data-ms="prev">Voir l’aperçu</button></div>
@@ -1247,6 +1255,10 @@ function mailAdmin() {
     <div id="mailPrev" class="mprev" hidden></div>
     <p class="note">Le message est déjà rempli avec les infos du projet (devis, montant, offre, lien de l’espace) et suit le ${D.tone === 'tu' ? 'tutoiement' : 'vouvoiement'} choisi pour ce client. Tu peux le retoucher ici. Pour le mail mis en page : clique sur le bouton, Gmail s’ouvre avec le destinataire et l’objet, puis colle le mail dans le message (⌘V sur Mac, Ctrl+V sinon). Rien ne part tant que tu n’as pas cliqué sur Envoyer dans Gmail.</p></div>`;
 }
+document.addEventListener('change', e => {
+  const t = e.target; if (!t || !t.matches || !t.matches('[data-mdoc]')) return;
+  DOCNAME = t.value; mailSet('doc'); const w = $('#mailWrap'); if (w) w.innerHTML = mailAdmin();
+});
 function mailClick(e) {
   const b = e.target.closest('[data-mt],[data-mto],[data-ms],[data-mjump]'); if (!b) return false;
   const box = $('#mailA');
@@ -1262,7 +1274,7 @@ function mailClick(e) {
       copyRich(mailHtml(subj, body), body, 'Mail mis en page copié').then(okc => {
         const e = encodeURIComponent, list = MAILT.to.filter(Boolean).join(',');
         const w = window.open(`https://mail.google.com/mail/?${AGENCY_MAIL ? 'authuser=' + e(AGENCY_MAIL) + '&' : ''}view=cm&fs=1&to=${e(list)}&su=${e(subj)}`, '_blank', 'noopener');
-        toast(w === null ? 'Fenêtre Gmail bloquée : autorise les fenêtres pour ce site' : okc ? 'Mail copié. Dans Gmail, clique dans le message et colle : ⌘V (Mac) ou Ctrl+V' : 'Gmail s’ouvre : copie le mail depuis « Voir l’aperçu » puis colle-le');
+        toast(w === null ? 'Fenêtre Gmail bloquée : autorise les fenêtres pour ce site' : okc ? 'Mail copié. Dans Gmail, colle-le (⌘V ou Ctrl+V)' + (MAILT.k === 'doc' ? ', puis joins le PDF avec le trombone' : '') : 'Gmail s’ouvre : copie le mail depuis « Voir l’aperçu » puis colle-le');
       });
       return true;
     }
